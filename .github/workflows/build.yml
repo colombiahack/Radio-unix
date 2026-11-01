@@ -68,3 +68,8 @@ jobs:
         with:
           name: REDunix-2026-apk
           path: REDunix-2026.apk
+      - name: Publicar versión para actualizar desde la app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f tools/post.sh ]; then bash tools/post.sh; fi
