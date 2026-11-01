@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'equalizer.dart';
 import 'globe.dart';
+import 'location.dart';
 import 'player_service.dart';
 import 'player_widgets.dart';
 import 'radio_api.dart';
@@ -40,11 +41,13 @@ class _HomeShellState extends State<HomeShell> {
   void initState() {
     super.initState();
     pickedCountry.addListener(_onPick);
+    nearbyPick.addListener(_onPick);
   }
 
   @override
   void dispose() {
     pickedCountry.removeListener(_onPick);
+    nearbyPick.removeListener(_onPick);
     super.dispose();
   }
 
@@ -137,11 +140,37 @@ class _ExploreScreenState extends State<ExploreScreen> {
   Country? country;
   String tag = '';
   String query = '';
+  bool near = false;
+  (double, double)? pos;
+
+  Future<List<Station>> _nearby() async {
+    final p = pos!;
+    final l = await api.nearby(p.$1, p.$2);
+    if (l.length >= 5) return l;
+    return api.search(country: nearestCountry(p.$1, p.$2).code);
+  }
+
+  Future<void> _locateMe() async {
+    final p = await getMyLocation(context);
+    if (p == null || !mounted) return;
+    near = true;
+    pos = p;
+    _reload();
+  }
+
+  void _onNearby() {
+    final p = nearbyPick.value;
+    if (p == null) return;
+    near = true;
+    pos = p;
+    _reload();
+  }
 
   void _onPick() {
     final c = pickedCountry.value;
     if (c == null) return;
     country = c;
+    near = false;
     _reload();
   }
 
@@ -149,16 +178,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
   void initState() {
     super.initState();
     pickedCountry.addListener(_onPick);
+    nearbyPick.addListener(_onNearby);
   }
 
   @override
   void dispose() {
     pickedCountry.removeListener(_onPick);
+    nearbyPick.removeListener(_onNearby);
     super.dispose();
   }
 
-  void _reload() => setState(() => future = api.search(
-      name: query, country: country?.code ?? '', tag: tag));
+  void _reload() => setState(() => future = near
+      ? _nearby()
+      : api.search(name: query, country: country?.code ?? '', tag: tag));
 
   Future<void> _pickCountry() async {
     List<Country> list;
@@ -175,6 +207,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
     if (c != null) {
       country = c.code.isEmpty ? null : c;
+      near = false;
       _reload();
     }
   }
@@ -205,6 +238,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               elevation: const WidgetStatePropertyAll(0),
               onSubmitted: (q) {
                 query = q.trim();
+                near = false;
                 _reload();
               },
             ),
@@ -221,7 +255,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       maxLines: 1, overflow: TextOverflow.ellipsis),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
+              IconButton.filledTonal(
+                tooltip: 'Cerca de mí',
+                icon: const Icon(Icons.my_location),
+                onPressed: _locateMe,
+              ),
+              const SizedBox(width: 6),
               FilledButton.icon(
                 icon: const Icon(Icons.shuffle),
                 label: const Text('Sorpréndeme'),
@@ -232,6 +272,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
             ]),
           ),
+          if (near)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text('Emisoras cerca de tu ubicación',
+                  style: TextStyle(color: Color(0xFF2979FF))),
+            ),
           SizedBox(
             height: 52,
             child: ListView(
@@ -245,6 +291,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                           selected: tag == e.value,
                           onSelected: (_) {
                             tag = e.value;
+                            near = false;
                             _reload();
                           },
                         ),

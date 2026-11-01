@@ -71,6 +71,25 @@ class RadioApi {
         .toList();
   }
 
+  Future<List<Station>> nearby(double lat, double lon) async {
+    try {
+      final l = await _json('/json/stations/search', {
+        'hidebroken': 'true',
+        'has_geo_info': 'true',
+        'order': 'geo_distance',
+        'geo_lat': lat.toStringAsFixed(4),
+        'geo_long': lon.toStringAsFixed(4),
+        'limit': '60',
+      });
+      return l
+          .map((e) => Station.fromJson(e as Map<String, dynamic>))
+          .where((s) => s.url.isNotEmpty)
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<List<Country>> countries() async {
     final l = await _json(
         '/json/countries', {'order': 'stationcount', 'reverse': 'true'});

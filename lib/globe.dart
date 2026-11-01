@@ -1,9 +1,13 @@
 import 'dart:math';
+import 'dart:ui' show PointMode;
 import 'package:flutter/material.dart';
+import 'location.dart';
 import 'radio_api.dart';
+import 'world_data.dart';
 
-/// Cuando el globo elige un país, Explorar lo escucha y se filtra solo.
+/// Explorar escucha estos avisos y se filtra solo.
 final pickedCountry = ValueNotifier<Country?>(null);
+final nearbyPick = ValueNotifier<(double, double)?>(null);
 
 const _places = <(String, String, double, double)>[
   ('CO', 'Colombia', 4.6, -74.1), ('MX', 'México', 23.6, -102.5),
@@ -39,6 +43,22 @@ const _places = <(String, String, double, double)>[
   ('PH', 'Filipinas', 12.9, 122), ('MY', 'Malasia', 4, 102),
   ('AU', 'Australia', -25, 134), ('NZ', 'Nueva Zelanda', -41, 174),
 ];
+
+Country nearestCountry(double lat, double lon) {
+  var best = 0;
+  var bd = double.infinity;
+  final p = lat * pi / 180, l = lon * pi / 180;
+  for (var i = 0; i < _places.length; i++) {
+    final q = _places[i].$3 * pi / 180, m = _places[i].$4 * pi / 180;
+    final d = -(sin(p) * sin(q) + cos(p) * cos(q) * cos(l - m));
+    if (d < bd) {
+      bd = d;
+      best = i;
+    }
+  }
+  final pl = _places[best];
+  return Country(pl.$1, pl.$2, 0);
+}
 
 class _View {
   final Size size;
@@ -77,44 +97,120 @@ void _poly(Canvas canvas, _View v, Paint paint, List<(double, double)> pts) {
   canvas.drawPath(path, paint);
 }
 
+const _biomeColors = [
+  Color(0xFFF1F5F7),
+  Color(0xFF9DAE95),
+  Color(0xFFD2B26F),
+  Color(0xFF2E7D32),
+  Color(0xFF5FA04E),
+];
+
+void _pill(Canvas canvas, Offset o, String text, {bool emoji = false}) {
+  final tp = TextPainter(
+    text: TextSpan(
+        text: text,
+        style: emoji
+            ? const TextStyle(fontSize: 28)
+            : const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF0A0F14))),
+    textDirection: TextDirection.ltr,
+  )..layout();
+  if (emoji) {
+    tp.paint(canvas, o - Offset(tp.width / 2, tp.height + 12));
+  } else {
+    final rect = RRect.fromRectAndRadius(
+        Rect.fromCenter(
+            center: o - const Offset(0, 28),
+            width: tp.width + 18,
+            height: tp.height + 8),
+        const Radius.circular(10));
+    canvas.drawRRect(rect, Paint()..color = Colors.white);
+    tp.paint(canvas, rect.center - Offset(tp.width / 2, tp.height / 2));
+  }
+}
+
 class _GlobePainter extends CustomPainter {
-  final double lon0, lat0;
+  final double lon0, lat0, pulse;
   final int? sel;
-  _GlobePainter(this.lon0, this.lat0, this.sel);
+  final (double, double)? me;
+  final bool meSel;
+  _GlobePainter(this.lon0, this.lat0, this.sel, this.me, this.meSel, this.pulse);
 
   @override
   void paint(Canvas canvas, Size size) {
     final v = _View(size, lat0, lon0);
+    final rect = Rect.fromCircle(center: v.c, radius: v.r);
+    final rnd = Random(7);
+    final starPaint = Paint()..color = const Color(0x66FFFFFF);
+    for (var i = 0; i < 45; i++) {
+      final o = Offset(rnd.nextDouble() * size.width, rnd.nextDouble() * size.height);
+      final rr = 0.6 + rnd.nextDouble() * 0.8;
+      if ((o - v.c).distance > v.r * 1.12) canvas.drawCircle(o, rr, starPaint);
+    }
     canvas.drawCircle(
         v.c,
-        v.r * 1.05,
+        v.r * 1.04,
         Paint()
-          ..color = const Color(0x4400BFA5)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 28));
+          ..color = const Color(0x884FC3F7)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16));
     canvas.drawCircle(
         v.c,
         v.r,
         Paint()
           ..shader = const RadialGradient(
-            center: Alignment(-0.3, -0.4),
-            colors: [Color(0xFF1B6B73), Color(0xFF0B2A33)],
-          ).createShader(Rect.fromCircle(center: v.c, radius: v.r)));
+            center: Alignment(-0.35, -0.4),
+            radius: 1.05,
+            colors: [Color(0xFF3A9AD9), Color(0xFF1565A8), Color(0xFF082B57)],
+            stops: [0, 0.55, 1],
+          ).createShader(rect));
     final line = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.7
-      ..color = const Color(0x3300E5CC);
+      ..strokeWidth = 0.6
+      ..color = const Color(0x1AFFFFFF);
     for (var la = -60.0; la <= 60; la += 30) {
       _poly(canvas, v, line, [for (var lo = -180.0; lo <= 180; lo += 4) (la, lo)]);
     }
     for (var lo = -180.0; lo < 180; lo += 30) {
       _poly(canvas, v, line, [for (var la = -90.0; la <= 90; la += 4) (la, lo)]);
     }
+    final buckets = List.generate(5, (_) => <Offset>[]);
+    for (final d in landDots) {
+      final o = v.project(d.$1, d.$2);
+      if (o != null) buckets[d.$3].add(o);
+    }
+    for (var b = 0; b < 5; b++) {
+      canvas.drawPoints(
+          PointMode.points,
+          buckets[b],
+          Paint()
+            ..color = _biomeColors[b]
+            ..strokeWidth = v.r * 0.03
+            ..strokeCap = StrokeCap.round);
+    }
+    canvas.drawCircle(
+        v.c,
+        v.r,
+        Paint()
+          ..shader = const RadialGradient(
+            center: Alignment(-0.3, -0.35),
+            radius: 1.1,
+            colors: [Color(0x22FFFFFF), Color(0x00000000), Color(0xAA010A1A)],
+            stops: [0, 0.55, 1],
+          ).createShader(rect));
+    canvas.drawCircle(
+        v.c,
+        v.r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = const Color(0x6690CAF9));
     for (var i = 0; i < _places.length; i++) {
       final o = v.project(_places[i].$3, _places[i].$4);
       if (o == null) continue;
-      canvas.drawCircle(o, 9,
-          Paint()..color = const Color(0x4400E5CC));
-      canvas.drawCircle(o, 4.5, Paint()..color = const Color(0xFF00E5CC));
+      canvas.drawCircle(o, 5.5, Paint()..color = Colors.white);
+      canvas.drawCircle(o, 3.8, Paint()..color = const Color(0xFFFF8F00));
     }
     if (sel != null) {
       final pl = _places[sel!];
@@ -122,18 +218,22 @@ class _GlobePainter extends CustomPainter {
       if (o != null) {
         canvas.drawCircle(
             o,
-            9,
+            10,
             Paint()
               ..color = Colors.white
               ..style = PaintingStyle.stroke
               ..strokeWidth = 2.5);
-        final tp = TextPainter(
-          text: TextSpan(
-              text: Country(pl.$1, pl.$2, 0).flag,
-              style: const TextStyle(fontSize: 28)),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        tp.paint(canvas, o - Offset(tp.width / 2, tp.height + 12));
+        _pill(canvas, o, Country(pl.$1, pl.$2, 0).flag, emoji: true);
+      }
+    }
+    if (me != null) {
+      final o = v.project(me!.$1, me!.$2);
+      if (o != null) {
+        canvas.drawCircle(o, 9 + 9 * pulse,
+            Paint()..color = Color.fromRGBO(41, 121, 255, 0.4 * (1 - pulse)));
+        canvas.drawCircle(o, 7.5, Paint()..color = Colors.white);
+        canvas.drawCircle(o, 5.5, Paint()..color = const Color(0xFF2979FF));
+        if (meSel) _pill(canvas, o, 'Tú');
       }
     }
   }
@@ -153,6 +253,8 @@ class _GlobeScreenState extends State<GlobeScreen>
   double lon0 = -70, lat0 = 15;
   bool touching = false;
   int? sel;
+  (double, double)? me;
+  bool meSel = false;
   late final AnimationController _c = AnimationController(
       vsync: this, duration: const Duration(seconds: 1))
     ..repeat();
@@ -161,7 +263,9 @@ class _GlobeScreenState extends State<GlobeScreen>
   void initState() {
     super.initState();
     _c.addListener(() {
-      if (!touching && sel == null && mounted) setState(() => lon0 += 0.25);
+      if (!touching && sel == null && !meSel && mounted) {
+        setState(() => lon0 += 0.25);
+      }
     });
   }
 
@@ -171,8 +275,30 @@ class _GlobeScreenState extends State<GlobeScreen>
     super.dispose();
   }
 
+  Future<void> _locate() async {
+    final p = await getMyLocation(context);
+    if (p == null || !mounted) return;
+    setState(() {
+      me = p;
+      meSel = true;
+      sel = null;
+      lon0 = p.$2;
+      lat0 = p.$1.clamp(-60.0, 60.0).toDouble();
+    });
+  }
+
   void _tap(Offset p, Size s) {
     final v = _View(s, lat0, lon0);
+    if (me != null) {
+      final o = v.project(me!.$1, me!.$2);
+      if (o != null && (o - p).distance < 30) {
+        setState(() {
+          meSel = true;
+          sel = null;
+        });
+        return;
+      }
+    }
     int? best;
     var bd = 28.0;
     for (var i = 0; i < _places.length; i++) {
@@ -184,7 +310,10 @@ class _GlobeScreenState extends State<GlobeScreen>
         best = i;
       }
     }
-    setState(() => sel = best);
+    setState(() {
+      sel = best;
+      meSel = false;
+    });
   }
 
   @override
@@ -193,15 +322,22 @@ class _GlobeScreenState extends State<GlobeScreen>
     return SafeArea(
       child: Column(children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
           child: Row(children: [
             const Icon(Icons.public, color: Color(0xFF00BFA5), size: 30),
             const SizedBox(width: 8),
-            Text('Descubre el mundo',
-                style: Theme.of(context)
-                    .textTheme
-                    .headlineSmall
-                    ?.copyWith(fontWeight: FontWeight.bold)),
+            Expanded(
+              child: Text('Descubre el mundo',
+                  style: Theme.of(context)
+                      .textTheme
+                      .headlineSmall
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+            ),
+            IconButton.filledTonal(
+              tooltip: 'Mi ubicación',
+              icon: const Icon(Icons.my_location),
+              onPressed: _locate,
+            ),
           ]),
         ),
         Expanded(
@@ -221,7 +357,8 @@ class _GlobeScreenState extends State<GlobeScreen>
                   onPanEnd: (_) => touching = false,
                   onTapUp: (d) => _tap(d.localPosition, size),
                   child: CustomPaint(
-                      painter: _GlobePainter(lon0, lat0, sel), size: size),
+                      painter: _GlobePainter(lon0, lat0, sel, me, meSel, _c.value),
+                      size: size),
                 ),
               ),
             );
@@ -234,26 +371,45 @@ class _GlobeScreenState extends State<GlobeScreen>
             color: const Color(0x14FFFFFF),
             borderRadius: BorderRadius.circular(20),
           ),
-          child: pl == null
-              ? const Center(
-                  child: Text('Arrastra el globo y toca un punto',
-                      style: TextStyle(color: Colors.white70)))
-              : Row(children: [
-                  Text(Country(pl.$1, pl.$2, 0).flag,
-                      style: const TextStyle(fontSize: 34)),
+          child: meSel && me != null
+              ? Row(children: [
+                  const Icon(Icons.my_location, color: Color(0xFF2979FF), size: 32),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(pl.$2,
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.w600)),
+                  const Expanded(
+                    child: Text('Tu ubicación',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
                   ),
                   FilledButton.icon(
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Escuchar'),
-                    onPressed: () =>
-                        pickedCountry.value = Country(pl.$1, pl.$2, 0),
+                    icon: const Icon(Icons.radio),
+                    label: const Text('Ver cerca'),
+                    onPressed: () {
+                      nearbyPick.value = null;
+                      nearbyPick.value = me;
+                    },
                   ),
-                ]),
+                ])
+              : pl == null
+                  ? const Center(
+                      child: Text(
+                          'Arrastra el globo, toca un país o usa el botón de ubicación',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white70)))
+                  : Row(children: [
+                      Text(Country(pl.$1, pl.$2, 0).flag,
+                          style: const TextStyle(fontSize: 34)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(pl.$2,
+                            style: const TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.w600)),
+                      ),
+                      FilledButton.icon(
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Escuchar'),
+                        onPressed: () =>
+                            pickedCountry.value = Country(pl.$1, pl.$2, 0),
+                      ),
+                    ]),
         ),
       ]),
     );
