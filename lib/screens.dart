@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'equalizer.dart';
+import 'globe.dart';
 import 'player_service.dart';
 import 'player_widgets.dart';
 import 'radio_api.dart';
@@ -33,13 +35,26 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int tab = 0;
+  void _onPick() => setState(() => tab = 0);
+  @override
+  void initState() {
+    super.initState();
+    pickedCountry.addListener(_onPick);
+  }
+
+  @override
+  void dispose() {
+    pickedCountry.removeListener(_onPick);
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => Container(
         decoration: bgGradient,
         child: Scaffold(
           body: IndexedStack(
               index: tab,
-              children: const [ExploreScreen(), FavoritesScreen()]),
+              children: const [ExploreScreen(), GlobeScreen(), FavoritesScreen()]),
           bottomNavigationBar:
               Column(mainAxisSize: MainAxisSize.min, children: [
             const MiniPlayer(),
@@ -49,7 +64,9 @@ class _HomeShellState extends State<HomeShell> {
               onDestinationSelected: (i) => setState(() => tab = i),
               destinations: const [
                 NavigationDestination(
-                    icon: Icon(Icons.public), label: 'Explorar'),
+                    icon: Icon(Icons.search), label: 'Explorar'),
+                NavigationDestination(
+                    icon: Icon(Icons.public), label: 'Globo'),
                 NavigationDestination(
                     icon: Icon(Icons.favorite), label: 'Favoritos'),
               ],
@@ -76,10 +93,15 @@ class StationTile extends StatelessWidget {
             ),
             child: ListTile(
               leading: Logo(s, size: 48),
-              title: Text(s.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              title: Row(children: [
+                Expanded(
+                  child: Text(s.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                ),
+                if (active) const PlayingEqualizer(height: 16, bars: 4),
+              ]),
               subtitle: Text(
                   s.tags.isEmpty ? s.country : '${s.country} · ${s.tags.split(',').first}',
                   maxLines: 1,
@@ -115,6 +137,25 @@ class _ExploreScreenState extends State<ExploreScreen> {
   Country? country;
   String tag = '';
   String query = '';
+
+  void _onPick() {
+    final c = pickedCountry.value;
+    if (c == null) return;
+    country = c;
+    _reload();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    pickedCountry.addListener(_onPick);
+  }
+
+  @override
+  void dispose() {
+    pickedCountry.removeListener(_onPick);
+    super.dispose();
+  }
 
   void _reload() => setState(() => future = api.search(
       name: query, country: country?.code ?? '', tag: tag));
@@ -152,7 +193,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       .headlineSmall
                       ?.copyWith(fontWeight: FontWeight.bold)),
               const Spacer(),
-              const Text('Sin anuncios',
+              const Text('Sin anuncios · REDunix-2026',
                   style: TextStyle(color: Color(0xFF00BFA5), fontSize: 12)),
             ]),
           ),

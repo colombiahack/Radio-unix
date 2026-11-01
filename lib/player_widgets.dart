@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'equalizer.dart';
 import 'player_service.dart';
 import 'radio_api.dart';
 
@@ -58,6 +59,8 @@ class MiniPlayer extends StatelessWidget {
                                 fontSize: 12, color: Colors.white70)),
                       ]),
                 ),
+                const PlayingEqualizer(height: 20, bars: 4),
+                const SizedBox(width: 4),
                 const PlayPauseButton(size: 36),
               ]),
             ),
@@ -133,7 +136,7 @@ class PlayerScreen extends StatelessWidget {
                         BoxShadow(color: Color(0x6600BFA5), blurRadius: 40)
                       ],
                     ),
-                    child: Logo(s, size: 240),
+                    child: Pulse(child: Logo(s, size: 170)),
                   ),
                   const SizedBox(height: 28),
                   Text(s.name,
@@ -145,6 +148,8 @@ class PlayerScreen extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(s.country, style: const TextStyle(color: Colors.white70)),
                   const SizedBox(height: 12),
+                  const PlayingEqualizer(height: 48, bars: 22),
+                  const SizedBox(height: 8),
                   StreamBuilder<IcyMetadata?>(
                     stream: p.player.icyMetadataStream,
                     builder: (_, snap) {
@@ -160,6 +165,8 @@ class PlayerScreen extends StatelessWidget {
                     },
                   ),
                   const SizedBox(height: 12),
+                  const VolumeBar(),
+                  const SizedBox(height: 4),
                   Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
                     ValueListenableBuilder(
                       valueListenable: p.favorites,
@@ -202,6 +209,50 @@ class PlayerScreen extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+}
+
+class VolumeBar extends StatefulWidget {
+  const VolumeBar({super.key});
+  @override
+  State<VolumeBar> createState() => _VolumeBarState();
+}
+
+class _VolumeBarState extends State<VolumeBar> {
+  double last = 0.7;
+  @override
+  Widget build(BuildContext context) {
+    final pl = PlayerService.i.player;
+    return StreamBuilder<double>(
+      stream: pl.volumeStream,
+      initialData: pl.volume,
+      builder: (_, snap) {
+        final v = snap.data ?? 1.0;
+        return Row(children: [
+          IconButton(
+            icon: Icon(v == 0
+                ? Icons.volume_off
+                : v < 0.5
+                    ? Icons.volume_down
+                    : Icons.volume_up),
+            onPressed: () {
+              if (v > 0) {
+                last = v;
+                pl.setVolume(0);
+              } else {
+                pl.setVolume(last > 0 ? last : 0.7);
+              }
+            },
+          ),
+          Expanded(
+            child: Slider(
+              value: v.clamp(0.0, 1.0),
+              onChanged: (x) => pl.setVolume(x),
+            ),
+          ),
+        ]);
+      },
     );
   }
 }
