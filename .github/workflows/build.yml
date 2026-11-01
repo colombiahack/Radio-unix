@@ -18,8 +18,19 @@ jobs:
             git config user.name "actions"
             git config user.email "actions@github.com"
             git add lib pubspec.yaml
+            git add icon 2>/dev/null || true
             git add -A update.zip
             git commit -m "Aplicar actualización" || true
+            git push || true
+          fi
+      - name: Crear llave de firma REDunix-2026
+        run: |
+          if [ ! -f redunix.jks ]; then
+            keytool -genkeypair -keystore redunix.jks -alias redunix -keyalg RSA -keysize 2048 -validity 10000 -storepass REDunix-2026 -keypass REDunix-2026 -dname "CN=REDunix-2026, O=REDunix, C=CO"
+            git config user.name "actions"
+            git config user.email "actions@github.com"
+            git add redunix.jks
+            git commit -m "Llave de firma REDunix-2026" || true
             git push || true
           fi
       - uses: actions/setup-java@v4
@@ -33,16 +44,25 @@ jobs:
         run: |
           flutter create . --org com.radiomundo --project-name radio_mundo
           git checkout -- lib pubspec.yaml
-      - name: Configurar manifiesto
+      - name: Configurar manifiesto e icono
         run: |
           M=android/app/src/main/AndroidManifest.xml
           sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="android.permission.WAKE_LOCK"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/><uses-permission android:name="android.permission.POST_NOTIFICATIONS"/><application android:usesCleartextTraffic="true"#' $M
           sed -i 's#</application>#<service android:name="com.ryanheise.audioservice.AudioService" android:foregroundServiceType="mediaPlayback" android:exported="true"><intent-filter><action android:name="android.media.browse.MediaBrowserService"/></intent-filter></service><receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver" android:exported="true"><intent-filter><action android:name="android.intent.action.MEDIA_BUTTON"/></intent-filter></receiver></application>#' $M
+          sed -i 's#android:label="[^"]*"#android:label="Radio Mundo"#' $M
           F=$(find android/app/src/main -name MainActivity.kt)
           sed -i 's/FlutterActivity/AudioServiceActivity/g; s#^import io.flutter.embedding.android.AudioServiceActivity#import com.ryanheise.audioservice.AudioServiceActivity#' $F
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            cp icon/mipmap-$d/ic_launcher.png android/app/src/main/res/mipmap-$d/ic_launcher.png
+          done
       - run: flutter pub get
       - run: flutter build apk --release
+      - name: Firmar APK REDunix-2026
+        run: |
+          AS=$(ls $ANDROID_HOME/build-tools/*/apksigner | sort -V | tail -1)
+          $AS sign --ks redunix.jks --ks-key-alias redunix --ks-pass pass:REDunix-2026 --key-pass pass:REDunix-2026 --out REDunix-2026.apk build/app/outputs/flutter-apk/app-release.apk
+          $AS verify --print-certs REDunix-2026.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: radio-mundo-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: REDunix-2026-apk
+          path: REDunix-2026.apk
