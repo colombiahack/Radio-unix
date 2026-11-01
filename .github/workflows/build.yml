@@ -19,6 +19,7 @@ jobs:
             git config user.email "actions@github.com"
             git add lib pubspec.yaml
             git add icon 2>/dev/null || true
+            git add tools 2>/dev/null || true
             git add -A update.zip
             git commit -m "Aplicar actualización" || true
             git push || true
@@ -55,6 +56,7 @@ jobs:
           for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
             cp icon/mipmap-$d/ic_launcher.png android/app/src/main/res/mipmap-$d/ic_launcher.png
           done
+          if [ -f tools/setup.sh ]; then bash tools/setup.sh; fi
       - run: flutter pub get
       - run: flutter build apk --release
       - name: Firmar APK REDunix-2026
