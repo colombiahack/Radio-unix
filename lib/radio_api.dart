@@ -1,8 +1,12 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'settings.dart';
 
 class Station {
   final String id, name, url, country, tags, favicon;
+  final int bitrate;
   Station({
     required this.id,
     required this.name,
@@ -10,6 +14,7 @@ class Station {
     required this.country,
     required this.tags,
     required this.favicon,
+    this.bitrate = 0,
   });
 
   factory Station.fromJson(Map<String, dynamic> j) => Station(
@@ -19,6 +24,7 @@ class Station {
         country: j['country'] ?? '',
         tags: j['tags'] ?? '',
         favicon: j['favicon'] ?? '',
+        bitrate: j['bitrate'] is num ? (j['bitrate'] as num).toInt() : 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -28,6 +34,7 @@ class Station {
         'country': country,
         'tags': tags,
         'favicon': favicon,
+        'bitrate': bitrate,
       };
 }
 
@@ -42,13 +49,53 @@ class Country {
 }
 
 class RadioApi {
-  static const _host = 'de1.api.radio-browser.info';
-  static const _headers = {'User-Agent': 'RadioMundo/0.2'};
+  static const _hosts = [
+    'de1.api.radio-browser.info',
+    'nl1.api.radio-browser.info',
+    'at1.api.radio-browser.info',
+    'fi1.api.radio-browser.info',
+  ];
+  static const _headers = {'User-Agent': 'RadioMundo/0.7'};
+  static int _good = 0;
+  static final usingCache = ValueNotifier<bool>(false);
+
+  Future<void> _save(String key, String body) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final keys = p.getStringList('ckeys') ?? [];
+      keys.remove(key);
+      keys.add(key);
+      while (keys.length > 12) {
+        await p.remove(keys.removeAt(0));
+      }
+      await p.setString(key, body);
+      await p.setStringList('ckeys', keys);
+    } catch (_) {}
+  }
 
   Future<List> _json(String path, Map<String, String> q) async {
-    final r = await http.get(Uri.https(_host, path, q), headers: _headers);
-    if (r.statusCode != 200) throw Exception('Error ${r.statusCode}');
-    return jsonDecode(r.body) as List;
+    final key = 'c:$path?${q.entries.map((e) => '${e.key}=${e.value}').join('&')}';
+    for (var n = 0; n < _hosts.length; n++) {
+      final idx = (_good + n) % _hosts.length;
+      try {
+        final r = await http
+            .get(Uri.https(_hosts[idx], path, q), headers: _headers)
+            .timeout(const Duration(seconds: 7));
+        if (r.statusCode != 200) continue;
+        final list = jsonDecode(r.body) as List;
+        _good = idx;
+        usingCache.value = false;
+        _save(key, r.body);
+        return list;
+      } catch (_) {}
+    }
+    final p = await SharedPreferences.getInstance();
+    final c = p.getString(key);
+    if (c != null) {
+      usingCache.value = true;
+      return jsonDecode(c) as List;
+    }
+    throw Exception('Sin conexión');
   }
 
   Future<List<Station>> search({
@@ -56,19 +103,28 @@ class RadioApi {
     String country = '',
     String tag = '',
   }) async {
-    final l = await _json('/json/stations/search', {
-      'hidebroken': 'true',
-      'order': 'clickcount',
-      'reverse': 'true',
-      'limit': '60',
-      if (name.isNotEmpty) 'name': name,
-      if (country.isNotEmpty) 'countrycode': country,
-      if (tag.isNotEmpty) 'tag': tag,
-    });
-    return l
-        .map((e) => Station.fromJson(e as Map<String, dynamic>))
-        .where((s) => s.url.isNotEmpty)
-        .toList();
+    Future<List<Station>> go(bool low) async {
+      final l = await _json('/json/stations/search', {
+        'hidebroken': 'true',
+        'order': 'clickcount',
+        'reverse': 'true',
+        'limit': Settings.saver.value ? '30' : '60',
+        if (low) 'bitrateMax': '64',
+        if (name.isNotEmpty) 'name': name,
+        if (country.isNotEmpty) 'countrycode': country,
+        if (tag.isNotEmpty) 'tag': tag,
+      });
+      return l
+          .map((e) => Station.fromJson(e as Map<String, dynamic>))
+          .where((s) => s.url.isNotEmpty)
+          .toList();
+    }
+
+    if (Settings.saver.value) {
+      final low = await go(true);
+      if (low.length >= 8) return low;
+    }
+    return go(false);
   }
 
   Future<List<Station>> nearby(double lat, double lon) async {

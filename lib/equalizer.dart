@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'player_service.dart';
+import 'settings.dart';
 
 class Equalizer extends StatefulWidget {
   final bool playing;
@@ -16,11 +17,32 @@ class Equalizer extends StatefulWidget {
 class _EqualizerState extends State<Equalizer>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 1400))
-    ..repeat();
+      vsync: this, duration: const Duration(milliseconds: 1400));
+
+  void _sync() {
+    if (Settings.saver.value || !widget.playing) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat();
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    Settings.saver.addListener(_sync);
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(Equalizer old) {
+    super.didUpdateWidget(old);
+    _sync();
+  }
 
   @override
   void dispose() {
+    Settings.saver.removeListener(_sync);
     _c.dispose();
     super.dispose();
   }
@@ -86,11 +108,26 @@ class Pulse extends StatefulWidget {
 
 class _PulseState extends State<Pulse> with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 1100))
-    ..repeat(reverse: true);
+      vsync: this, duration: const Duration(milliseconds: 1100));
+
+  void _sync() {
+    if (Settings.saver.value) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    Settings.saver.addListener(_sync);
+    _sync();
+  }
 
   @override
   void dispose() {
+    Settings.saver.removeListener(_sync);
     _c.dispose();
     super.dispose();
   }

@@ -3,6 +3,7 @@ import 'dart:ui' show PointMode;
 import 'package:flutter/material.dart';
 import 'location.dart';
 import 'radio_api.dart';
+import 'settings.dart';
 import 'world_data.dart';
 
 /// Explorar escucha estos avisos y se filtra solo.
@@ -135,8 +136,9 @@ class _GlobePainter extends CustomPainter {
   final double lon0, lat0, pulse;
   final int? sel;
   final (double, double)? me;
-  final bool meSel;
-  _GlobePainter(this.lon0, this.lat0, this.sel, this.me, this.meSel, this.pulse);
+  final bool meSel, saver;
+  _GlobePainter(this.lon0, this.lat0, this.sel, this.me, this.meSel, this.pulse,
+      this.saver);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -144,7 +146,7 @@ class _GlobePainter extends CustomPainter {
     final rect = Rect.fromCircle(center: v.c, radius: v.r);
     final rnd = Random(7);
     final starPaint = Paint()..color = const Color(0x66FFFFFF);
-    for (var i = 0; i < 45; i++) {
+    for (var i = 0; i < (saver ? 0 : 45); i++) {
       final o = Offset(rnd.nextDouble() * size.width, rnd.nextDouble() * size.height);
       final rr = 0.6 + rnd.nextDouble() * 0.8;
       if ((o - v.c).distance > v.r * 1.12) canvas.drawCircle(o, rr, starPaint);
@@ -154,7 +156,7 @@ class _GlobePainter extends CustomPainter {
         v.r * 1.04,
         Paint()
           ..color = const Color(0x884FC3F7)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16));
+          ..maskFilter = saver ? null : const MaskFilter.blur(BlurStyle.normal, 16));
     canvas.drawCircle(
         v.c,
         v.r,
@@ -176,7 +178,7 @@ class _GlobePainter extends CustomPainter {
       _poly(canvas, v, line, [for (var la = -90.0; la <= 90; la += 4) (la, lo)]);
     }
     final buckets = List.generate(5, (_) => <Offset>[]);
-    for (final d in landDots) {
+    for (final d in (saver ? landDotsLite : landDots)) {
       final o = v.project(d.$1, d.$2);
       if (o != null) buckets[d.$3].add(o);
     }
@@ -186,7 +188,7 @@ class _GlobePainter extends CustomPainter {
           buckets[b],
           Paint()
             ..color = _biomeColors[b]
-            ..strokeWidth = v.r * 0.03
+            ..strokeWidth = v.r * (saver ? 0.058 : 0.03)
             ..strokeCap = StrokeCap.round);
     }
     canvas.drawCircle(
@@ -243,34 +245,67 @@ class _GlobePainter extends CustomPainter {
 }
 
 class GlobeScreen extends StatefulWidget {
-  const GlobeScreen({super.key});
+  final bool active;
+  const GlobeScreen({super.key, this.active = true});
   @override
   State<GlobeScreen> createState() => _GlobeScreenState();
 }
 
 class _GlobeScreenState extends State<GlobeScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   double lon0 = -70, lat0 = 15;
   bool touching = false;
   int? sel;
   (double, double)? me;
   bool meSel = false;
   late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(seconds: 1))
-    ..repeat();
+      vsync: this, duration: const Duration(seconds: 1));
+  bool _resumed = true;
+  int _tick = 0;
+
+  void _syncAnim() {
+    final run = widget.active && _resumed && !Settings.saver.value;
+    if (run) {
+      if (!_c.isAnimating) _c.repeat();
+    } else {
+      _c.stop();
+    }
+  }
+
+  void _onSaver() {
+    _syncAnim();
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    Settings.saver.addListener(_onSaver);
     _c.addListener(() {
-      if (!touching && sel == null && !meSel && mounted) {
-        setState(() => lon0 += 0.25);
-      }
+      if (!mounted || touching || sel != null || meSel) return;
+      if (++_tick % 2 != 0) return;
+      setState(() => lon0 += 0.5);
     });
+    _syncAnim();
+  }
+
+  @override
+  void didUpdateWidget(GlobeScreen old) {
+    super.didUpdateWidget(old);
+    _syncAnim();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _resumed = state == AppLifecycleState.resumed;
+    _syncAnim();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    Settings.saver.removeListener(_onSaver);
     _c.dispose();
     super.dispose();
   }
@@ -357,7 +392,7 @@ class _GlobeScreenState extends State<GlobeScreen>
                   onPanEnd: (_) => touching = false,
                   onTapUp: (d) => _tap(d.localPosition, size),
                   child: CustomPaint(
-                      painter: _GlobePainter(lon0, lat0, sel, me, meSel, _c.value),
+                      painter: _GlobePainter(lon0, lat0, sel, me, meSel, 0.35, Settings.saver.value),
                       size: size),
                 ),
               ),

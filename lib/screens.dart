@@ -4,6 +4,9 @@ import 'globe.dart';
 import 'location.dart';
 import 'player_service.dart';
 import 'player_widgets.dart';
+import 'saver_sheet.dart';
+import 'settings.dart';
+import 'update.dart';
 import 'radio_api.dart';
 
 const bgGradient = BoxDecoration(
@@ -52,12 +55,18 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   @override
-  Widget build(BuildContext context) => Container(
-        decoration: bgGradient,
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+        valueListenable: Settings.saver,
+        builder: (_, saver, __) => Container(
+        decoration: saver ? const BoxDecoration(color: Colors.black) : bgGradient,
         child: Scaffold(
           body: IndexedStack(
               index: tab,
-              children: const [ExploreScreen(), GlobeScreen(), FavoritesScreen()]),
+              children: [
+                const ExploreScreen(),
+                GlobeScreen(active: tab == 1),
+                const FavoritesScreen()
+              ]),
           bottomNavigationBar:
               Column(mainAxisSize: MainAxisSize.min, children: [
             const MiniPlayer(),
@@ -76,7 +85,8 @@ class _HomeShellState extends State<HomeShell> {
             ),
           ]),
         ),
-      );
+      ),
+    );
 }
 
 class StationTile extends StatelessWidget {
@@ -106,7 +116,7 @@ class StationTile extends StatelessWidget {
                 if (active) const PlayingEqualizer(height: 16, bars: 4),
               ]),
               subtitle: Text(
-                  s.tags.isEmpty ? s.country : '${s.country} · ${s.tags.split(',').first}',
+                  '${s.country}${s.bitrate > 0 ? ' · ${s.bitrate} kbps' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis),
               trailing: ValueListenableBuilder(
@@ -216,18 +226,45 @@ class _ExploreScreenState extends State<ExploreScreen> {
   Widget build(BuildContext context) => SafeArea(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            padding: const EdgeInsets.fromLTRB(16, 12, 4, 0),
             child: Row(children: [
               const Icon(Icons.radio, color: Color(0xFF00BFA5), size: 30),
               const SizedBox(width: 8),
-              Text('Radio Mundo',
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-              const Spacer(),
-              const Text('Sin anuncios · REDunix-2026',
-                  style: TextStyle(color: Color(0xFF00BFA5), fontSize: 12)),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Radio Mundo',
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineSmall
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                      const Text('REDunix-2026',
+                          style: TextStyle(
+                              color: Color(0xFF00BFA5), fontSize: 11)),
+                    ]),
+              ),
+              ValueListenableBuilder<bool>(
+                valueListenable: Settings.saver,
+                builder: (_, on, __) => IconButton(
+                  tooltip: 'Ahorro de batería y datos',
+                  icon: Icon(on ? Icons.eco : Icons.eco_outlined,
+                      color: on ? const Color(0xFF69F0AE) : null),
+                  onPressed: () => showSaverSheet(context),
+                ),
+              ),
+              ValueListenableBuilder<UpdateInfo?>(
+                valueListenable: updateAvailable,
+                builder: (_, u, __) => IconButton(
+                  tooltip: 'Actualizaciones',
+                  icon: Badge(
+                    smallSize: 10,
+                    isLabelVisible: u != null,
+                    child: const Icon(Icons.system_update_alt),
+                  ),
+                  onPressed: () => showUpdateSheet(context),
+                ),
+              ),
             ]),
           ),
           Padding(
@@ -272,6 +309,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
             ]),
           ),
+          ValueListenableBuilder<bool>(
+            valueListenable: RadioApi.usingCache,
+            builder: (_, u, __) => u
+                ? const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Text('Sin conexión: mostrando la última lista guardada',
+                        style: TextStyle(color: Colors.amber)),
+                  )
+                : const SizedBox.shrink(),
+          ),
           if (near)
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -310,7 +357,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   return Center(
                     child: TextButton(
                         onPressed: _reload,
-                        child: const Text('Sin conexión. Reintentar')),
+                        child: const Text('No se pudo cargar. Toca para reintentar')),
                   );
                 }
                 final l = snap.data!;

@@ -78,10 +78,10 @@ int _biome(double lat, double lon) {
   return 4;
 }
 
-List<(double, double, int)> buildLand() {
+List<(double, double, int)> buildLand([double d = 1.5]) {
   final out = <(double, double, int)>[];
-  for (var lat = -84.0; lat <= 84; lat += 1.5) {
-    final step = 1.5 / cos(lat * pi / 180);
+  for (var lat = -84.0; lat <= 84; lat += d) {
+    final step = d / cos(lat * pi / 180);
     for (var lon = -180.0; lon < 180; lon += step) {
       if (_inAny(lon, lat, kLand) && !_inAny(lon, lat, kWater)) {
         out.add((lat, lon, _biome(lat, lon)));
@@ -92,3 +92,4 @@ List<(double, double, int)> buildLand() {
 }
 
 final List<(double, double, int)> landDots = buildLand();
+final List<(double, double, int)> landDotsLite = buildLand(3.0);

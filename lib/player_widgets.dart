@@ -3,24 +3,30 @@ import 'package:just_audio/just_audio.dart';
 import 'equalizer.dart';
 import 'player_service.dart';
 import 'radio_api.dart';
+import 'settings.dart';
 
 class Logo extends StatelessWidget {
   final Station s;
   final double size;
   const Logo(this.s, {super.key, this.size = 48});
   @override
-  Widget build(BuildContext context) => ClipRRect(
-        borderRadius: BorderRadius.circular(size / 4),
-        child: Container(
-          width: size,
-          height: size,
-          color: const Color(0x22FFFFFF),
-          child: s.favicon.startsWith('http')
-              ? Image.network(s.favicon,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) =>
-                      Icon(Icons.radio, size: size / 2))
-              : Icon(Icons.radio, size: size / 2),
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+        valueListenable: Settings.saver,
+        builder: (context, saver, _) => ClipRRect(
+          borderRadius: BorderRadius.circular(size / 4),
+          child: Container(
+            width: size,
+            height: size,
+            color: const Color(0x22FFFFFF),
+            child: (!saver && s.favicon.startsWith('http'))
+                ? Image.network(s.favicon,
+                    fit: BoxFit.contain,
+                    cacheWidth:
+                        (size * MediaQuery.of(context).devicePixelRatio).round(),
+                    errorBuilder: (_, __, ___) =>
+                        Icon(Icons.radio, size: size / 2))
+                : Icon(Icons.radio, size: size / 2),
+          ),
         ),
       );
 }

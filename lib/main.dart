@@ -3,6 +3,8 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'player_service.dart';
 import 'screens.dart';
+import 'settings.dart';
+import 'update.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,10 +14,14 @@ Future<void> main() async {
     androidNotificationOngoing: true,
   );
   await PlayerService.i.init();
+  await Settings.init();
   runApp(const RadioMundoApp());
   // Android 13+: sin este permiso no se ven los controles en segundo plano.
   WidgetsBinding.instance
-      .addPostFrameCallback((_) => Permission.notification.request());
+      .addPostFrameCallback((_) {
+    Permission.notification.request();
+    checkForUpdate();
+  });
 }
 
 class RadioMundoApp extends StatelessWidget {

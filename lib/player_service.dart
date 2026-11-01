@@ -16,14 +16,53 @@ class PlayerService {
   final sleepLeft = ValueNotifier<Duration?>(null);
   Timer? _sleep;
 
+  int _retries = 0;
+  final dataKb = ValueNotifier<double>(0);
+  Timer? _dt;
+
+  void _watch() {
+    player.playingStream.listen((on) {
+      _dt?.cancel();
+      if (on) {
+        _dt = Timer.periodic(const Duration(seconds: 5), (_) {
+          final br = current.value?.bitrate ?? 0;
+          dataKb.value += (br > 0 ? br : 128) * 5 / 8;
+        });
+      }
+    });
+    player.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace st) {
+      final s = current.value;
+      if (s != null) _retry(s);
+    });
+    player.playerStateStream.listen((st) {
+      if (st.playing && st.processingState == ProcessingState.ready) {
+        _retries = 0;
+      }
+    });
+  }
+
+  void _retry(Station s) {
+    if (_retries >= 3 || current.value?.id != s.id) return;
+    _retries++;
+    Future.delayed(const Duration(seconds: 3), () {
+      if (current.value?.id == s.id) _play(s);
+    });
+  }
+
   Future<void> init() async {
+    _watch();
     final p = await SharedPreferences.getInstance();
     final raw = p.getStringList('favs') ?? [];
     favorites.value =
         raw.map((e) => Station.fromJson(jsonDecode(e))).toList();
   }
 
-  Future<void> play(Station s) async {
+  Future<void> play(Station s) {
+    _retries = 0;
+    return _play(s);
+  }
+
+  Future<void> _play(Station s) async {
     current.value = s;
     try {
       await player.setAudioSource(AudioSource.uri(
@@ -38,6 +77,7 @@ class PlayerService {
       await player.play();
     } catch (e) {
       debugPrint('No se pudo reproducir: $e');
+      _retry(s);
     }
   }
 
