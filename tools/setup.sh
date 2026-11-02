@@ -1,8 +1,23 @@
 #!/bin/bash
 M=android/app/src/main/AndroidManifest.xml
-sed -i 's#<application#<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/><uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/><uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/><application#' $M
 
-# Desugaring (lo exige ota_update)
+# --- Permisos ---
+sed -i 's#<application#<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/><uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/><uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/><uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/><uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/><uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/><application#' $M
+
+# --- La pantalla se enciende con la alarma ---
+sed -i 's#<activity#<activity android:showWhenLocked="true" android:turnScreenOn="true"#' $M
+
+# --- Código nativo del despertador (servicio que reproduce la radio) ---
+F=$(find android/app/src/main -name MainActivity.kt | head -1)
+DIR=$(dirname "$F")
+PKG=$(grep -m1 '^package ' "$F" | awk '{print $2}')
+for K in MainActivity AlarmBridge AlarmService AlarmReceiver BootReceiver; do
+  sed "s/PACKAGE_NAME/$PKG/g" tools/android/$K.kt > "$DIR/$K.kt"
+done
+SNIP="<service android:name=\"$PKG.AlarmService\" android:exported=\"false\" android:foregroundServiceType=\"mediaPlayback\"/><receiver android:name=\"$PKG.AlarmReceiver\" android:exported=\"false\"/><receiver android:name=\"$PKG.BootReceiver\" android:exported=\"true\"><intent-filter><action android:name=\"android.intent.action.BOOT_COMPLETED\"/><action android:name=\"android.intent.action.MY_PACKAGE_REPLACED\"/></intent-filter></receiver>"
+sed -i "s#</application>#${SNIP}</application>#" $M
+
+# --- Desugaring (lo exige ota_update) ---
 G=android/app/build.gradle.kts
 if [ -f "$G" ]; then
   if grep -q "compileOptions" "$G"; then
@@ -20,8 +35,3 @@ else
   fi
   printf "\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'\n}\n" >> "$G"
 fi
-
-# Despertador: permisos, receptores y pantalla encendida con la alarma
-sed -i 's#<application#<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/><uses-permission android:name="android.permission.VIBRATE"/><uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/><uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/><application#' $M
-sed -i 's#</application>#<receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"/><receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/><action android:name="android.intent.action.QUICKBOOT_POWERON"/><action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/></intent-filter></receiver></application>#' $M
-sed -i 's#<activity#<activity android:showWhenLocked="true" android:turnScreenOn="true"#' $M

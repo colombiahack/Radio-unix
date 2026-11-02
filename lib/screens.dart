@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'alarms.dart';
 import 'equalizer.dart';
 import 'globe.dart';
+import 'home_country.dart';
 import 'location.dart';
 import 'player_service.dart';
 import 'player_widgets.dart';
@@ -151,7 +152,48 @@ class ExploreScreen extends StatefulWidget {
 class _ExploreScreenState extends State<ExploreScreen> {
   final api = RadioApi();
   late final Future<List<Country>> countriesF = api.countries();
-  late Future<List<Station>> future = api.search();
+  late Future<List<Station>> future = _initial();
+  String? homeCode;
+
+  Future<List<Station>> _initial() async {
+    final saved = await savedHome();
+    if (saved != null) {
+      homeCode = saved;
+      _setHome(saved);
+      _refreshHome(saved);
+      return api.search(country: saved);
+    }
+    // Primera vez: espera un poco para no chocar con el aviso de notificaciones.
+    await Future.delayed(const Duration(seconds: 3));
+    final code = await detectHome(api);
+    if (code != null) {
+      homeCode = code;
+      _setHome(code);
+      return api.search(country: code);
+    }
+    return api.search();
+  }
+
+  Future<void> _setHome(String code) async {
+    String? apiName;
+    try {
+      final l = await countriesF;
+      apiName = l.firstWhere((e) => e.code == code).name;
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => country = Country(code, placeName(code) ?? apiName ?? code, 0));
+  }
+
+  Future<void> _refreshHome(String old) async {
+    final code = await detectHome(api);
+    if (!mounted || code == null || code == old) return;
+    final untouched = country?.code == old && !near;
+    homeCode = code;
+    if (untouched) {
+      await _setHome(code);
+      _reload();
+    }
+  }
   Country? country;
   String tag = '';
   String query = '';
@@ -324,6 +366,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   )
                 : const SizedBox.shrink(),
           ),
+          if (!near && homeCode != null && country?.code == homeCode)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text('Mostrando emisoras de tu país',
+                  style: TextStyle(color: Color(0xFF00BFA5))),
+            ),
           if (near)
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 8, 16, 0),

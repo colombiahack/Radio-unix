@@ -45,6 +45,13 @@ const _places = <(String, String, double, double)>[
   ('AU', 'Australia', -25, 134), ('NZ', 'Nueva Zelanda', -41, 174),
 ];
 
+String? placeName(String code) {
+  for (final p in _places) {
+    if (p.$1 == code) return p.$2;
+  }
+  return null;
+}
+
 Country nearestCountry(double lat, double lon) {
   var best = 0;
   var bd = double.infinity;

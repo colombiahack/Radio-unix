@@ -7,6 +7,7 @@ import 'settings.dart';
 class Station {
   final String id, name, url, country, tags, favicon;
   final int bitrate;
+  final String cc;
   Station({
     required this.id,
     required this.name,
@@ -15,6 +16,7 @@ class Station {
     required this.tags,
     required this.favicon,
     this.bitrate = 0,
+    this.cc = '',
   });
 
   factory Station.fromJson(Map<String, dynamic> j) => Station(
@@ -25,6 +27,7 @@ class Station {
         tags: j['tags'] ?? '',
         favicon: j['favicon'] ?? '',
         bitrate: j['bitrate'] is num ? (j['bitrate'] as num).toInt() : 0,
+        cc: (j['countrycode'] ?? '').toString(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -35,6 +38,7 @@ class Station {
         'tags': tags,
         'favicon': favicon,
         'bitrate': bitrate,
+        'countrycode': cc,
       };
 }
 

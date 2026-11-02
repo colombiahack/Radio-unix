@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:ota_update/ota_update.dart';
 
-const kAppBuild = 10;
-const kAppVersion = '0.10.0';
+const kAppBuild = 12;
+const kAppVersion = '0.12.0';
 const kRepo = 'Colombiahack/Radio-unix';
 
 class UpdateInfo {

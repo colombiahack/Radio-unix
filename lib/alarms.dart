@@ -1,11 +1,11 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:timezone/timezone.dart' as tz;
 import 'player_service.dart';
 import 'radio_api.dart';
+
+final appNavKey = GlobalKey<NavigatorState>();
 
 class Alarm {
   final int id, hour, minute;
@@ -48,66 +48,42 @@ class Alarm {
       );
 }
 
+class _Lifecycle with WidgetsBindingObserver {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) Alarms.checkRinging();
+  }
+}
+
+/// Las alarmas las programa y reproduce un servicio nativo de Android,
+/// igual que un reloj: suena aunque la app esté cerrada.
 class Alarms {
   static final list = ValueNotifier<List<Alarm>>([]);
-  static final _plugin = FlutterLocalNotificationsPlugin();
-  static Timer? _timer;
-
-  static const _details = NotificationDetails(
-    android: AndroidNotificationDetails(
-      'alarmas',
-      'Despertador',
-      channelDescription: 'Alarmas con radio',
-      importance: Importance.max,
-      priority: Priority.high,
-      fullScreenIntent: true,
-      category: AndroidNotificationCategory.alarm,
-      audioAttributesUsage: AudioAttributesUsage.alarm,
-    ),
-  );
+  static const _ch = MethodChannel('redunix/alarm');
+  static bool _dialogOpen = false;
 
   static Future<void> init() async {
-    try {
-      await _plugin.initialize(
-        const InitializationSettings(
-            android: AndroidInitializationSettings('@mipmap/ic_launcher')),
-        onDidReceiveNotificationResponse: (r) => _handle(r.payload),
-      );
-    } catch (_) {}
     try {
       final p = await SharedPreferences.getInstance();
       list.value = (p.getStringList('alarms') ?? [])
           .map((e) => Alarm.fromJson(jsonDecode(e) as Map<String, dynamic>))
           .toList();
     } catch (_) {}
-    try {
-      final d = await _plugin.getNotificationAppLaunchDetails();
-      if (d?.didNotificationLaunchApp ?? false) {
-        _handle(d?.notificationResponse?.payload);
+    _ch.setMethodCallHandler((call) async {
+      if (call.method == 'ringing') {
+        final m = call.arguments as Map?;
+        _showRinging((m?['aid'] as int?) ?? -1, (m?['name'] as String?) ?? '');
       }
-    } catch (_) {}
+      return null;
+    });
+    WidgetsBinding.instance.addObserver(_Lifecycle());
     await _schedule();
-  }
-
-  static void _handle(String? payload) {
-    if (payload == null || !payload.startsWith('alarm:')) return;
-    final id = int.tryParse(payload.substring(6));
-    for (final a in list.value) {
-      if (a.id == id) {
-        PlayerService.i.play(a.station);
-        return;
-      }
-    }
   }
 
   static Future<void> ensurePermissions() async {
     try {
-      final a = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
-      await a?.requestNotificationsPermission();
-      if (!(await a?.canScheduleExactNotifications() ?? true)) {
-        await a?.requestExactAlarmsPermission();
-      }
+      final ok = await _ch.invokeMethod<bool>('canExact') ?? true;
+      if (!ok) await _ch.invokeMethod('requestExact');
     } catch (_) {}
   }
 
@@ -125,57 +101,75 @@ class Alarms {
   }
 
   static Future<void> _schedule() async {
-    try {
-      await _plugin.cancelAll();
-      final android = _plugin.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
-      var exact = true;
-      try {
-        exact = await android?.canScheduleExactNotifications() ?? true;
-      } catch (_) {}
-      final now = DateTime.now();
-      for (final a in list.value) {
-        if (!a.enabled) continue;
-        final occ = _occurrences(a, now);
-        for (var k = 0; k < occ.length; k++) {
-          await _plugin.zonedSchedule(
-            a.id * 100 + k,
-            'Despertador · Radio Mundo',
-            a.station.name,
-            tz.TZDateTime.from(occ[k], tz.UTC),
-            _details,
-            androidScheduleMode: exact
-                ? AndroidScheduleMode.exactAllowWhileIdle
-                : AndroidScheduleMode.inexactAllowWhileIdle,
-            payload: 'alarm:${a.id}',
-          );
-        }
-      }
-    } catch (_) {}
-    _armTimer();
-  }
-
-  /// Si la app está abierta a la hora de la alarma, suena sin tocar nada.
-  static void _armTimer() {
-    _timer?.cancel();
+    final items = <Map<String, Object>>[];
     final now = DateTime.now();
-    DateTime? best;
-    Alarm? who;
     for (final a in list.value) {
       if (!a.enabled) continue;
       final occ = _occurrences(a, now);
-      if (occ.isEmpty) continue;
-      if (best == null || occ.first.isBefore(best)) {
-        best = occ.first;
-        who = a;
+      for (var k = 0; k < occ.length; k++) {
+        items.add({
+          'id': a.id * 100 + k,
+          't': occ[k].millisecondsSinceEpoch,
+          'aid': a.id,
+          'name': a.station.name,
+          'url': a.station.url,
+        });
       }
     }
-    if (best == null || who == null) return;
-    final alarm = who;
-    _timer = Timer(best.difference(now), () {
-      PlayerService.i.play(alarm.station);
-      _armTimer();
-    });
+    try {
+      await _ch.invokeMethod('schedule', items);
+    } catch (_) {}
+  }
+
+  /// Si hay una alarma sonando, ofrece detenerla o seguir escuchando en la app.
+  static Future<void> checkRinging() async {
+    try {
+      final r = await _ch.invokeMethod<Map>('ringing');
+      if (r != null) {
+        _showRinging((r['aid'] as int?) ?? -1, (r['name'] as String?) ?? '');
+      }
+    } catch (_) {}
+  }
+
+  static Future<void> _showRinging(int aid, String name) async {
+    if (_dialogOpen) return;
+    Alarm? found;
+    for (final a in list.value) {
+      if (a.id == aid) found = a;
+    }
+    final al = found;
+    if (al != null && al.days.isEmpty && al.enabled) {
+      toggle(al);
+    }
+    var ctx = appNavKey.currentContext;
+    if (ctx == null) {
+      await Future.delayed(const Duration(seconds: 1));
+      ctx = appNavKey.currentContext;
+    }
+    if (ctx == null) return;
+    _dialogOpen = true;
+    final keep = await showDialog<bool>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (d) => AlertDialog(
+        title: const Text('Despertador'),
+        content: Text('Está sonando: $name'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(d, false),
+              child: const Text('Detener')),
+          if (al != null)
+            FilledButton(
+                onPressed: () => Navigator.pop(d, true),
+                child: const Text('Seguir en la app')),
+        ],
+      ),
+    );
+    _dialogOpen = false;
+    try {
+      await _ch.invokeMethod('stop');
+    } catch (_) {}
+    if (keep == true && al != null) PlayerService.i.play(al.station);
   }
 
   static Future<void> _save() async {

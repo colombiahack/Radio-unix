@@ -23,6 +23,7 @@ Future<void> main() async {
       .addPostFrameCallback((_) {
     Permission.notification.request();
     checkForUpdate();
+    Alarms.checkRinging();
   });
 }
 
@@ -30,6 +31,7 @@ class RadioMundoApp extends StatelessWidget {
   const RadioMundoApp({super.key});
   @override
   Widget build(BuildContext context) => MaterialApp(
+        navigatorKey: appNavKey,
         title: 'Radio Mundo',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
