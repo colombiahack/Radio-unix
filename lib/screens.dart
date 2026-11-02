@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'alarms.dart';
 import 'equalizer.dart';
 import 'globe.dart';
 import 'location.dart';
@@ -65,7 +66,8 @@ class _HomeShellState extends State<HomeShell> {
               children: [
                 const ExploreScreen(),
                 GlobeScreen(active: tab == 1),
-                const FavoritesScreen()
+                const FavoritesScreen(),
+                const AlarmScreen()
               ]),
           bottomNavigationBar:
               Column(mainAxisSize: MainAxisSize.min, children: [
@@ -81,6 +83,8 @@ class _HomeShellState extends State<HomeShell> {
                     icon: Icon(Icons.public), label: 'Globo'),
                 NavigationDestination(
                     icon: Icon(Icons.favorite), label: 'Favoritos'),
+                NavigationDestination(
+                    icon: Icon(Icons.alarm), label: 'Alarma'),
               ],
             ),
           ]),
@@ -91,7 +95,8 @@ class _HomeShellState extends State<HomeShell> {
 
 class StationTile extends StatelessWidget {
   final Station s;
-  const StationTile(this.s, {super.key});
+  final List<Station>? list;
+  const StationTile(this.s, {super.key, this.list});
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<Station?>(
         valueListenable: PlayerService.i.current,
@@ -130,7 +135,7 @@ class StationTile extends StatelessWidget {
                   onPressed: () => PlayerService.i.toggleFav(s),
                 ),
               ),
-              onTap: () => PlayerService.i.play(s),
+              onTap: () => PlayerService.i.playFrom(list ?? [s], s),
             ),
           );
         },
@@ -366,7 +371,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 }
                 return ListView.builder(
                   itemCount: l.length,
-                  itemBuilder: (_, i) => StationTile(l[i]),
+                  itemBuilder: (_, i) => StationTile(l[i], list: l),
                 );
               },
             ),
@@ -434,7 +439,7 @@ class FavoritesScreen extends StatelessWidget {
               : ListView.builder(
                   padding: const EdgeInsets.only(top: 12),
                   itemCount: l.length,
-                  itemBuilder: (_, i) => StationTile(l[i])),
+                  itemBuilder: (_, i) => StationTile(l[i], list: l)),
         ),
       );
 }

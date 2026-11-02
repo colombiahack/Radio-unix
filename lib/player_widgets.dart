@@ -68,6 +68,11 @@ class MiniPlayer extends StatelessWidget {
                 const PlayingEqualizer(height: 20, bars: 4),
                 const SizedBox(width: 4),
                 const PlayPauseButton(size: 36),
+                IconButton(
+                  iconSize: 28,
+                  icon: const Icon(Icons.skip_next),
+                  onPressed: () => PlayerService.i.next(),
+                ),
               ]),
             ),
           );
@@ -184,7 +189,17 @@ class PlayerScreen extends StatelessWidget {
                         onPressed: () => p.toggleFav(s),
                       ),
                     ),
-                    const PlayPauseButton(size: 84),
+                    IconButton(
+                      iconSize: 36,
+                      icon: const Icon(Icons.skip_previous),
+                      onPressed: () => p.previous(),
+                    ),
+                    const PlayPauseButton(size: 76),
+                    IconButton(
+                      iconSize: 36,
+                      icon: const Icon(Icons.skip_next),
+                      onPressed: () => p.next(),
+                    ),
                     ValueListenableBuilder<Duration?>(
                       valueListenable: p.sleepLeft,
                       builder: (_, left, __) => PopupMenuButton<int>(

@@ -17,6 +17,7 @@ class PlayerService {
   Timer? _sleep;
 
   int _retries = 0;
+  List<Station> queue = [];
   final dataKb = ValueNotifier<double>(0);
   Timer? _dt;
 
@@ -28,6 +29,11 @@ class PlayerService {
           final br = current.value?.bitrate ?? 0;
           dataKb.value += (br > 0 ? br : 128) * 5 / 8;
         });
+      }
+    });
+    player.currentIndexStream.listen((i) {
+      if (i != null && i >= 0 && i < queue.length) {
+        current.value = queue[i];
       }
     });
     player.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace st) {
@@ -45,7 +51,7 @@ class PlayerService {
     if (_retries >= 3 || current.value?.id != s.id) return;
     _retries++;
     Future.delayed(const Duration(seconds: 3), () {
-      if (current.value?.id == s.id) _play(s);
+      if (current.value?.id == s.id) _playQueue(queue, s);
     });
   }
 
@@ -57,27 +63,64 @@ class PlayerService {
         raw.map((e) => Station.fromJson(jsonDecode(e))).toList();
   }
 
-  Future<void> play(Station s) {
+  Future<void> play(Station s) => playFrom([s], s);
+
+  Future<void> playFrom(List<Station> list, Station s) {
     _retries = 0;
-    return _play(s);
+    return _playQueue(list, s);
   }
 
-  Future<void> _play(Station s) async {
+  Future<void> _playQueue(List<Station> list, Station s) async {
+    final ok = list.where((e) => Uri.tryParse(e.url) != null).toList();
+    if (!ok.any((e) => e.id == s.id)) ok.insert(0, s);
+    queue = ok;
     current.value = s;
+    final i = ok.indexWhere((e) => e.id == s.id);
     try {
-      await player.setAudioSource(AudioSource.uri(
-        Uri.parse(s.url),
-        tag: MediaItem(
-          id: s.id,
-          title: s.name,
-          album: s.country,
-          artUri: s.favicon.startsWith('http') ? Uri.parse(s.favicon) : null,
-        ),
-      ));
+      await player.setAudioSource(
+        ConcatenatingAudioSource(children: [
+          for (final e in ok)
+            AudioSource.uri(
+              Uri.parse(e.url),
+              tag: MediaItem(
+                id: e.id,
+                title: e.name,
+                album: e.country,
+                artUri: e.favicon.startsWith('http')
+                    ? Uri.tryParse(e.favicon)
+                    : null,
+              ),
+            ),
+        ]),
+        initialIndex: i < 0 ? 0 : i,
+      );
+      await player.setLoopMode(LoopMode.all);
       await player.play();
     } catch (e) {
       debugPrint('No se pudo reproducir: $e');
       _retry(s);
+    }
+  }
+
+  /// Siguiente emisora de la lista. Si solo hay una (Sorpréndeme), busca otra al azar.
+  Future<void> next() async {
+    if (queue.length > 1) {
+      final i = player.currentIndex ?? 0;
+      await player.seek(Duration.zero, index: (i + 1) % queue.length);
+      if (!player.playing) await player.play();
+    } else {
+      final s = await RadioApi().random();
+      if (s != null) await play(s);
+    }
+  }
+
+  /// Emisora anterior de la lista.
+  Future<void> previous() async {
+    if (queue.length > 1) {
+      final i = player.currentIndex ?? 0;
+      await player.seek(Duration.zero,
+          index: (i - 1 + queue.length) % queue.length);
+      if (!player.playing) await player.play();
     }
   }
 

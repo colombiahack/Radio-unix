@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'alarms.dart';
 import 'player_service.dart';
 import 'screens.dart';
 import 'settings.dart';
@@ -15,6 +16,7 @@ Future<void> main() async {
   );
   await PlayerService.i.init();
   await Settings.init();
+  await Alarms.init();
   runApp(const RadioMundoApp());
   // Android 13+: sin este permiso no se ven los controles en segundo plano.
   WidgetsBinding.instance
