@@ -202,6 +202,12 @@ class Alarms {
     await _save();
   }
 
+  static Future<void> update(Alarm a) async {
+    list.value = [for (final x in list.value) x.id == a.id ? a : x];
+    await ensurePermissions();
+    await _save();
+  }
+
   static Future<void> toggle(Alarm a) async {
     list.value = [
       for (final x in list.value)
@@ -225,6 +231,35 @@ String _daysText(List<int> d) {
   return s.map((x) => _dayShort[x - 1]).join(' · ');
 }
 
+void _openSheet(BuildContext context, {Alarm? edit}) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    builder: (_) => AlarmSheet(edit: edit),
+  );
+}
+
+Future<bool> _askDelete(BuildContext context, Alarm a) async {
+  final t = TimeOfDay(hour: a.hour, minute: a.minute).format(context);
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (d) => AlertDialog(
+      title: const Text('Eliminar alarma'),
+      content: Text('¿Eliminar la alarma de las $t?'),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(d, false),
+            child: const Text('Cancelar')),
+        TextButton(
+            onPressed: () => Navigator.pop(d, true),
+            child: const Text('Eliminar',
+                style: TextStyle(color: Colors.redAccent))),
+      ],
+    ),
+  );
+  return ok == true;
+}
+
 class AlarmScreen extends StatelessWidget {
   const AlarmScreen({super.key});
 
@@ -246,18 +281,14 @@ class AlarmScreen extends StatelessWidget {
               IconButton.filledTonal(
                 tooltip: 'Nueva alarma',
                 icon: const Icon(Icons.add),
-                onPressed: () => showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  builder: (_) => const AddAlarmSheet(),
-                ),
+                onPressed: () => _openSheet(context),
               ),
             ]),
           ),
           const Padding(
             padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Text(
-                'Despierta con tu emisora favorita. Para que suene con la pantalla apagada, permite "Alarmas y recordatorios" y deja la batería en "Sin restricciones".',
+                'Toca una alarma para editarla o usa el basurero para eliminarla. Para que suene con la pantalla apagada, permite "Alarmas y recordatorios" y deja la batería en "Sin restricciones".',
                 style: TextStyle(color: Colors.white60, fontSize: 12)),
           ),
           Expanded(
@@ -272,39 +303,43 @@ class AlarmScreen extends StatelessWidget {
                         final a = l[i];
                         final t = TimeOfDay(hour: a.hour, minute: a.minute)
                             .format(context);
-                        return Dismissible(
-                          key: ValueKey(a.id),
-                          direction: DismissDirection.endToStart,
-                          background: Container(
-                            color: Colors.red.shade900,
-                            alignment: Alignment.centerRight,
-                            padding: const EdgeInsets.only(right: 20),
-                            child: const Icon(Icons.delete),
+                        return Container(
+                          margin: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0x14FFFFFF),
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          onDismissed: (_) => Alarms.remove(a),
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0x14FFFFFF),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: ListTile(
-                              title: Text(t,
-                                  style: TextStyle(
-                                      fontSize: 30,
-                                      fontWeight: FontWeight.w500,
-                                      color: a.enabled
-                                          ? Colors.white
-                                          : Colors.white38)),
-                              subtitle: Text(
-                                  '${a.station.name}\n${_daysText(a.days)}',
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis),
-                              isThreeLine: true,
-                              trailing: Switch(
-                                  value: a.enabled,
-                                  onChanged: (_) => Alarms.toggle(a)),
+                          child: ListTile(
+                            onTap: () => _openSheet(context, edit: a),
+                            title: Text(t,
+                                style: TextStyle(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w500,
+                                    color: a.enabled
+                                        ? Colors.white
+                                        : Colors.white38)),
+                            subtitle: Text(
+                                '${a.station.name}\n${_daysText(a.days)}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis),
+                            isThreeLine: true,
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Switch(
+                                    value: a.enabled,
+                                    onChanged: (_) => Alarms.toggle(a)),
+                                IconButton(
+                                  tooltip: 'Eliminar',
+                                  icon: const Icon(Icons.delete_outline),
+                                  onPressed: () async {
+                                    if (await _askDelete(context, a)) {
+                                      Alarms.remove(a);
+                                    }
+                                  },
+                                ),
+                              ],
                             ),
                           ),
                         );
@@ -316,109 +351,148 @@ class AlarmScreen extends StatelessWidget {
       );
 }
 
-class AddAlarmSheet extends StatefulWidget {
-  const AddAlarmSheet({super.key});
+class AlarmSheet extends StatefulWidget {
+  final Alarm? edit;
+  const AlarmSheet({super.key, this.edit});
   @override
-  State<AddAlarmSheet> createState() => _AddAlarmSheetState();
+  State<AlarmSheet> createState() => _AlarmSheetState();
 }
 
-class _AddAlarmSheetState extends State<AddAlarmSheet> {
-  TimeOfDay time = const TimeOfDay(hour: 7, minute: 0);
-  final days = <int>{};
+class _AlarmSheetState extends State<AlarmSheet> {
+  late TimeOfDay time;
+  late final Set<int> days;
   int sel = 0;
   late final List<Station> cands;
 
   @override
   void initState() {
     super.initState();
+    final e = widget.edit;
+    time = e == null
+        ? const TimeOfDay(hour: 7, minute: 0)
+        : TimeOfDay(hour: e.hour, minute: e.minute);
+    days = {...?e?.days};
     final cur = PlayerService.i.current.value;
     cands = [...PlayerService.i.favorites.value];
-    if (cur != null && !cands.any((e) => e.id == cur.id)) cands.insert(0, cur);
+    if (cur != null && !cands.any((x) => x.id == cur.id)) cands.insert(0, cur);
+    if (e != null) {
+      final i = cands.indexWhere((x) => x.id == e.station.id);
+      if (i < 0) {
+        cands.insert(0, e.station);
+        sel = 0;
+      } else {
+        sel = i;
+      }
+    }
   }
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: EdgeInsets.fromLTRB(
-            20, 20, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Nueva alarma',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 14),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.access_time),
-                label: Text(time.format(context),
-                    style: const TextStyle(fontSize: 26)),
-                onPressed: () async {
-                  final t =
-                      await showTimePicker(context: context, initialTime: time);
-                  if (t != null) setState(() => time = t);
-                },
+  Widget build(BuildContext context) {
+    final editing = widget.edit != null;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          20, 20, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(editing ? 'Editar alarma' : 'Nueva alarma',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.access_time),
+              label: Text(time.format(context),
+                  style: const TextStyle(fontSize: 26)),
+              onPressed: () async {
+                final t =
+                    await showTimePicker(context: context, initialTime: time);
+                if (t != null) setState(() => time = t);
+              },
+            ),
+            const SizedBox(height: 14),
+            const Text('Emisora'),
+            if (cands.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                    'Marca una emisora como favorita (corazón) y vuelve aquí.',
+                    style: TextStyle(color: Colors.amber)),
+              )
+            else
+              DropdownButton<int>(
+                isExpanded: true,
+                value: sel,
+                items: [
+                  for (var i = 0; i < cands.length; i++)
+                    DropdownMenuItem(
+                      value: i,
+                      child:
+                          Text(cands[i].name, overflow: TextOverflow.ellipsis),
+                    ),
+                ],
+                onChanged: (v) => setState(() => sel = v ?? 0),
               ),
-              const SizedBox(height: 14),
-              const Text('Emisora'),
-              if (cands.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 6),
-                  child: Text(
-                      'Marca una emisora como favorita (corazón) y vuelve aquí.',
-                      style: TextStyle(color: Colors.amber)),
-                )
-              else
-                DropdownButton<int>(
-                  isExpanded: true,
-                  value: sel,
-                  items: [
-                    for (var i = 0; i < cands.length; i++)
-                      DropdownMenuItem(
-                        value: i,
-                        child: Text(cands[i].name,
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                  ],
-                  onChanged: (v) => setState(() => sel = v ?? 0),
+            const SizedBox(height: 10),
+            const Text('Días (sin marcar = una sola vez)'),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, children: [
+              for (var d = 1; d <= 7; d++)
+                FilterChip(
+                  label: Text(const ['L', 'M', 'X', 'J', 'V', 'S', 'D'][d - 1]),
+                  selected: days.contains(d),
+                  onSelected: (on) =>
+                      setState(() => on ? days.add(d) : days.remove(d)),
                 ),
-              const SizedBox(height: 10),
-              const Text('Días (sin marcar = una sola vez)'),
-              const SizedBox(height: 6),
-              Wrap(spacing: 6, children: [
-                for (var d = 1; d <= 7; d++)
-                  FilterChip(
-                    label: Text(const ['L', 'M', 'X', 'J', 'V', 'S', 'D'][d - 1]),
-                    selected: days.contains(d),
-                    onSelected: (on) =>
-                        setState(() => on ? days.add(d) : days.remove(d)),
-                  ),
-              ]),
-              const SizedBox(height: 16),
+            ]),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.alarm_add),
+                label: Text(editing ? 'Guardar cambios' : 'Guardar alarma'),
+                onPressed: cands.isEmpty
+                    ? null
+                    : () async {
+                        final alarm = Alarm(
+                          id: widget.edit?.id ?? Alarms.newId(),
+                          hour: time.hour,
+                          minute: time.minute,
+                          days: days.toList()..sort(),
+                          enabled: true,
+                          station: cands[sel],
+                        );
+                        if (editing) {
+                          await Alarms.update(alarm);
+                        } else {
+                          await Alarms.add(alarm);
+                        }
+                        if (mounted) Navigator.pop(context);
+                      },
+              ),
+            ),
+            if (editing)
               SizedBox(
                 width: double.infinity,
-                child: FilledButton.icon(
-                  icon: const Icon(Icons.alarm_add),
-                  label: const Text('Guardar alarma'),
-                  onPressed: cands.isEmpty
-                      ? null
-                      : () async {
-                          await Alarms.add(Alarm(
-                            id: Alarms.newId(),
-                            hour: time.hour,
-                            minute: time.minute,
-                            days: days.toList()..sort(),
-                            enabled: true,
-                            station: cands[sel],
-                          ));
-                          if (mounted) Navigator.pop(context);
-                        },
+                child: TextButton.icon(
+                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  label: const Text('Eliminar alarma',
+                      style: TextStyle(color: Colors.redAccent)),
+                  onPressed: () async {
+                    final e = widget.edit!;
+                    if (await _askDelete(context, e)) {
+                      await Alarms.remove(e);
+                      if (mounted) Navigator.pop(context);
+                    }
+                  },
                 ),
               ),
-            ],
-          ),
+          ],
         ),
-      );
+      ),
+    );
+  }
 }
