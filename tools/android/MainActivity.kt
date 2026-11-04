@@ -7,12 +7,17 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : AudioServiceActivity() {
     companion object {
         var channel: MethodChannel? = null
+        var updateChannel: MethodChannel? = null
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "redunix/alarm")
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
+        val ch = MethodChannel(messenger, "redunix/alarm")
         channel = ch
         ch.setMethodCallHandler { call, result -> AlarmBridge.handle(this, call, result) }
+        val uc = MethodChannel(messenger, "redunix/update")
+        updateChannel = uc
+        uc.setMethodCallHandler { call, result -> Updater.handle(this, call, result) }
     }
 }

@@ -11,10 +11,10 @@ sed -i 's#<activity#<activity android:showWhenLocked="true" android:turnScreenOn
 F=$(find android/app/src/main -name MainActivity.kt | head -1)
 DIR=$(dirname "$F")
 PKG=$(grep -m1 '^package ' "$F" | awk '{print $2}')
-for K in MainActivity AlarmBridge AlarmService AlarmReceiver BootReceiver; do
+for K in MainActivity AlarmBridge AlarmService AlarmReceiver BootReceiver Updater InstallReceiver; do
   sed "s/PACKAGE_NAME/$PKG/g" tools/android/$K.kt > "$DIR/$K.kt"
 done
-SNIP="<service android:name=\"$PKG.AlarmService\" android:exported=\"false\" android:foregroundServiceType=\"mediaPlayback\"/><receiver android:name=\"$PKG.AlarmReceiver\" android:exported=\"false\"/><receiver android:name=\"$PKG.BootReceiver\" android:exported=\"true\"><intent-filter><action android:name=\"android.intent.action.BOOT_COMPLETED\"/><action android:name=\"android.intent.action.MY_PACKAGE_REPLACED\"/></intent-filter></receiver>"
+SNIP="<service android:name=\"$PKG.AlarmService\" android:exported=\"false\" android:foregroundServiceType=\"mediaPlayback\"/><receiver android:name=\"$PKG.AlarmReceiver\" android:exported=\"false\"/><receiver android:name=\"$PKG.InstallReceiver\" android:exported=\"false\"/><receiver android:name=\"$PKG.BootReceiver\" android:exported=\"true\"><intent-filter><action android:name=\"android.intent.action.BOOT_COMPLETED\"/><action android:name=\"android.intent.action.MY_PACKAGE_REPLACED\"/></intent-filter></receiver>"
 sed -i "s#</application>#${SNIP}</application>#" $M
 
 # --- Desugaring (lo exige ota_update) ---

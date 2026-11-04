@@ -43,8 +43,9 @@ Future<(double, double)?> quietLocation() async {
     var p = await Geolocator.checkPermission();
     if (p == LocationPermission.denied) {
       final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool('loc_asked') ?? false) return null;
-      await prefs.setBool('loc_asked', true);
+      final n = prefs.getInt('loc_asked_n') ?? 0;
+      if (n >= 3) return null;
+      await prefs.setInt('loc_asked_n', n + 1);
       p = await Geolocator.requestPermission();
     }
     if (p == LocationPermission.denied ||

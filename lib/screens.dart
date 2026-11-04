@@ -165,13 +165,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
     // Primera vez: espera un poco para no chocar con el aviso de notificaciones.
     await Future.delayed(const Duration(seconds: 3));
-    final code = await detectHome(api);
-    if (code != null) {
-      homeCode = code;
-      _setHome(code);
-      return api.search(country: code);
-    }
-    return api.search();
+    final code = await detectHome();
+    homeCode = code;
+    _setHome(code);
+    return api.search(country: code);
   }
 
   Future<void> _setHome(String code) async {
@@ -185,8 +182,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Future<void> _refreshHome(String old) async {
-    final code = await detectHome(api);
-    if (!mounted || code == null || code == old) return;
+    final code = await detectHome();
+    if (!mounted || code == old) return;
     final untouched = country?.code == old && !near;
     homeCode = code;
     if (untouched) {

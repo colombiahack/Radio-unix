@@ -1,11 +1,10 @@
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:ota_update/ota_update.dart';
+import 'package:flutter/services.dart';
 
-const kAppBuild = 12;
-const kAppVersion = '0.12.0';
+const kAppBuild = 13;
+const kAppVersion = '0.13.0';
 const kRepo = 'Colombiahack/Radio-unix';
 
 class UpdateInfo {
@@ -48,10 +47,11 @@ Future<UpdateInfo?> checkForUpdate() async {
 }
 
 void showUpdateSheet(BuildContext context) {
-  showModalBottomSheet(
+  showDialog(
     context: context,
-    isScrollControlled: true,
-    builder: (_) => const UpdateSheet(),
+    builder: (_) => const Dialog(
+      child: SingleChildScrollView(child: UpdateSheet()),
+    ),
   );
 }
 
@@ -62,23 +62,55 @@ class UpdateSheet extends StatefulWidget {
 }
 
 class _UpdateSheetState extends State<UpdateSheet> {
+  static const _uch = MethodChannel('redunix/update');
   UpdateInfo? info;
   bool checking = true;
   bool busy = false;
   String msg = '';
   double? progress;
-  StreamSubscription? sub;
 
   @override
   void initState() {
     super.initState();
+    _uch.setMethodCallHandler(_onCall);
     _check();
   }
 
   @override
   void dispose() {
-    sub?.cancel();
+    _uch.setMethodCallHandler(null);
     super.dispose();
+  }
+
+  Future<dynamic> _onCall(MethodCall c) async {
+    if (!mounted) return null;
+    if (c.method == 'progress') {
+      final p = (c.arguments as int?) ?? 0;
+      setState(() {
+        progress = p / 100;
+        msg = 'Descargando… $p%';
+      });
+    } else if (c.method == 'status') {
+      final m = c.arguments as Map?;
+      final st = (m?['s'] as String?) ?? '';
+      final t = (m?['m'] as String?) ?? '';
+      setState(() {
+        busy = false;
+        if (st == 'installing') {
+          progress = 1;
+          msg = 'Descarga lista. Android te pedirá confirmar la instalación: pulsa Instalar.';
+        } else if (st == 'needPermission') {
+          msg = 'Activa "Permitir desde esta fuente" para Radio Mundo, vuelve a la app y pulsa de nuevo.';
+        } else {
+          final sig = t.toLowerCase().contains('signature') ||
+              t.contains('INCOMPATIBLE');
+          msg = sig
+              ? 'La firma no coincide con la app instalada. Desinstala Radio Mundo una vez e instala el APK firmado REDunix-2026.'
+              : 'No se pudo instalar: $t';
+        }
+      });
+    }
+    return null;
   }
 
   Future<void> _check() async {
@@ -90,48 +122,18 @@ class _UpdateSheetState extends State<UpdateSheet> {
     });
   }
 
-  void _install() {
+  Future<void> _install() async {
     final i = info;
     if (i == null || busy) return;
     setState(() {
       busy = true;
-      msg = 'Descargando…';
+      msg = 'Preparando la descarga…';
       progress = 0;
     });
     try {
-      sub = OtaUpdate()
-          .execute(i.url, destinationFilename: 'REDunix-2026.apk')
-          .listen((e) {
-        if (!mounted) return;
-        setState(() {
-          switch (e.status) {
-            case OtaStatus.DOWNLOADING:
-              final p = double.tryParse(e.value ?? '') ?? 0;
-              progress = p / 100;
-              msg = 'Descargando… ${p.round()}%';
-              break;
-            case OtaStatus.INSTALLING:
-              progress = 1;
-              msg = 'Abriendo el instalador…';
-              busy = false;
-              break;
-            case OtaStatus.PERMISSION_NOT_GRANTED_ERROR:
-              msg = 'Permite instalar apps desde Radio Mundo y vuelve a pulsar.';
-              busy = false;
-              break;
-            default:
-              msg = 'No se pudo completar (${e.status.name}).';
-              busy = false;
-          }
-        });
-      }, onError: (_) {
-        if (!mounted) return;
-        setState(() {
-          msg = 'Error al descargar. Inténtalo de nuevo.';
-          busy = false;
-        });
-      });
+      await _uch.invokeMethod('start', {'url': i.url});
     } catch (_) {
+      if (!mounted) return;
       setState(() {
         msg = 'No se pudo iniciar la descarga.';
         busy = false;
@@ -200,7 +202,13 @@ class _UpdateSheetState extends State<UpdateSheet> {
               ),
             ),
           ],
-          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cerrar'),
+            ),
+          ),
         ],
       ),
     );
