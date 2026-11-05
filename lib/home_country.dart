@@ -7,7 +7,7 @@ const kDefaultCountry = 'CO';
 Future<String?> savedHome() async {
   try {
     final p = await SharedPreferences.getInstance();
-    return p.getString('home_country2');
+    return p.getString('home_country3');
   } catch (_) {
     return null;
   }
@@ -20,7 +20,7 @@ Future<String> detectHome() async {
   if (pos != null) code = nearestCountry(pos.$1, pos.$2).code;
   try {
     final p = await SharedPreferences.getInstance();
-    await p.setString('home_country2', code);
+    await p.setString('home_country3', code);
   } catch (_) {}
   return code;
 }

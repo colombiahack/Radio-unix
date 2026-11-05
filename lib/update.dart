@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 
-const kAppBuild = 13;
-const kAppVersion = '0.13.0';
+const kAppBuild = 14;
+const kAppVersion = '0.13.1';
 const kRepo = 'Colombiahack/Radio-unix';
 
 class UpdateInfo {

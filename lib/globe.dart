@@ -119,17 +119,86 @@ const _boxes = <String, List<double>>{
   'NZ': [-47.3, -34.4, 166.4, 178.6],
 };
 
+const _colombia = <double>[
+  -71.7, 12.45,
+  -71.32, 11.85,
+  -72.1, 11.35,
+  -72.8, 10.3,
+  -73.0, 9.3,
+  -72.8, 8.6,
+  -72.4, 7.9,
+  -72.0, 7.2,
+  -71.0, 7.15,
+  -70.1, 7.05,
+  -69.4, 6.3,
+  -67.5, 6.3,
+  -67.4, 5.3,
+  -67.6, 4.2,
+  -67.5, 3.0,
+  -67.2, 2.0,
+  -66.9, 1.2,
+  -69.8, 1.05,
+  -70.0, 0.6,
+  -69.5, -0.2,
+  -69.6, -1.2,
+  -69.75, -4.3,
+  -70.2, -4.1,
+  -70.4, -3.7,
+  -71.3, -2.4,
+  -72.5, -2.4,
+  -73.3, -1.5,
+  -74.3, -0.9,
+  -75.3, -0.1,
+  -76.4, 0.3,
+  -77.3, 0.4,
+  -78.0, 0.9,
+  -78.8, 1.3,
+  -78.8, 1.9,
+  -78.4, 2.5,
+  -77.7, 3.4,
+  -77.2, 3.9,
+  -77.3, 4.6,
+  -77.55, 5.5,
+  -77.4, 6.2,
+  -77.9, 7.2,
+  -77.4, 7.9,
+  -77.35, 8.67,
+  -76.9, 8.2,
+  -76.5, 8.7,
+  -75.8, 9.4,
+  -75.6, 10.0,
+  -75.5, 10.4,
+  -74.8, 11.0,
+  -74.2, 11.3,
+  -73.0, 11.55,
+  -72.2, 12.2,
+];
+
+bool _inColombia(double lat, double lon) {
+  var c = false;
+  for (var i = 0, j = _colombia.length - 2; i < _colombia.length; j = i, i += 2) {
+    final xi = _colombia[i], yi = _colombia[i + 1];
+    final xj = _colombia[j], yj = _colombia[j + 1];
+    if ((yi > lat) != (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) {
+      c = !c;
+    }
+  }
+  return c;
+}
+
 /// País donde cae un punto: primero por cajas geográficas (la más pequeña
 /// que lo contiene) y, si no cae en ninguna, por el centro más cercano.
 Country nearestCountry(double lat, double lon) {
+  if (_inColombia(lat, lon)) return Country('CO', 'Colombia', 0);
   String? inside;
-  var area = double.infinity;
+  var boxD = double.infinity;
   for (final e in _boxes.entries) {
     final b = e.value;
     if (lat >= b[0] && lat <= b[1] && lon >= b[2] && lon <= b[3]) {
-      final a = (b[1] - b[0]) * (b[3] - b[2]);
-      if (a < area) {
-        area = a;
+      final dy = lat - (b[0] + b[1]) / 2, dx = lon - (b[2] + b[3]) / 2;
+      final d = dy * dy + dx * dx;
+      if (d < boxD) {
+        boxD = d;
         inside = e.key;
       }
     }
