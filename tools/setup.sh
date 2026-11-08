@@ -35,3 +35,13 @@ else
   fi
   printf "\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'\n}\n" >> "$G"
 fi
+
+# --- Globo realista: foto de la Tierra (NASA Blue Marble, dominio público) y sombreador ---
+mkdir -p assets shaders
+TEX=assets/earth.jpg
+curl -fsSL --max-time 120 "https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg" -o "$TEX" \
+  || curl -fsSL --max-time 120 "https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg" -o "$TEX" \
+  || true
+if [ ! -s "$TEX" ]; then echo "sin textura" > "$TEX"; fi
+ls -la "$TEX"
+cp tools/globe.frag shaders/globe.frag

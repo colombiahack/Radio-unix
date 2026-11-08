@@ -1,5 +1,6 @@
 import 'dart:math';
-import 'dart:ui' show PointMode;
+import 'dart:ui' as ui;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/material.dart';
 import 'location.dart';
 import 'radio_api.dart';
@@ -260,6 +261,35 @@ void _poly(Canvas canvas, _View v, Paint paint, List<(double, double)> pts) {
   canvas.drawPath(path, paint);
 }
 
+/// Foto de la Tierra (NASA) + sombreador en la GPU. Si no está disponible
+/// (o en modo ahorro) se usa el globo de puntos de siempre.
+class GlobeAssets {
+  static ui.FragmentShader? shader;
+  static ui.Image? tex;
+  static bool _loading = false;
+  static final ready = ValueNotifier<bool>(false);
+
+  static Future<void> load() async {
+    if (_loading || ready.value) return;
+    _loading = true;
+    try {
+      final data = await rootBundle.load('assets/earth.jpg');
+      if (data.lengthInBytes < 50000) return; // no se pudo descargar al compilar
+      final codec = await ui.instantiateImageCodec(
+          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+          targetWidth: 2048);
+      final frame = await codec.getNextFrame();
+      final program = await ui.FragmentProgram.fromAsset('shaders/globe.frag');
+      tex = frame.image;
+      shader = program.fragmentShader();
+      ready.value = true;
+    } catch (_) {
+    } finally {
+      _loading = false;
+    }
+  }
+}
+
 const _biomeColors = [
   Color(0xFFF1F5F7),
   Color(0xFF9DAE95),
@@ -298,9 +328,9 @@ class _GlobePainter extends CustomPainter {
   final double lon0, lat0, pulse;
   final int? sel;
   final (double, double)? me;
-  final bool meSel, saver;
+  final bool meSel, saver, useTex;
   _GlobePainter(this.lon0, this.lat0, this.sel, this.me, this.meSel, this.pulse,
-      this.saver);
+      this.saver, this.useTex);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -319,6 +349,9 @@ class _GlobePainter extends CustomPainter {
         Paint()
           ..color = const Color(0x884FC3F7)
           ..maskFilter = saver ? null : const MaskFilter.blur(BlurStyle.normal, 16));
+    if (useTex && GlobeAssets.shader != null && GlobeAssets.tex != null) {
+      _paintReal(canvas, v, size);
+    } else {
     canvas.drawCircle(
         v.c,
         v.r,
@@ -346,7 +379,7 @@ class _GlobePainter extends CustomPainter {
     }
     for (var b = 0; b < 5; b++) {
       canvas.drawPoints(
-          PointMode.points,
+          ui.PointMode.points,
           buckets[b],
           Paint()
             ..color = _biomeColors[b]
@@ -370,36 +403,68 @@ class _GlobePainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5
           ..color = const Color(0x6690CAF9));
+    }
     for (var i = 0; i < _places.length; i++) {
       final o = v.project(_places[i].$3, _places[i].$4);
       if (o == null) continue;
-      canvas.drawCircle(o, 5.5, Paint()..color = Colors.white);
-      canvas.drawCircle(o, 3.8, Paint()..color = const Color(0xFFFF8F00));
+      canvas.drawCircle(o, 8, Paint()..color = const Color(0x2600E5FF));
+      canvas.drawCircle(o, 4.8, Paint()..color = const Color(0x5500E5FF));
+      canvas.drawCircle(o, 2.6, Paint()..color = const Color(0xFFBFF6FF));
     }
     if (sel != null) {
       final pl = _places[sel!];
       final o = v.project(pl.$3, pl.$4);
       if (o != null) {
-        canvas.drawCircle(
-            o,
-            10,
-            Paint()
-              ..color = Colors.white
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 2.5);
+        _ripples(canvas, o, 0, 229, 255, v.r);
         _pill(canvas, o, Country(pl.$1, pl.$2, 0).flag, emoji: true);
       }
     }
     if (me != null) {
       final o = v.project(me!.$1, me!.$2);
       if (o != null) {
-        canvas.drawCircle(o, 9 + 9 * pulse,
-            Paint()..color = Color.fromRGBO(41, 121, 255, 0.4 * (1 - pulse)));
+        if (meSel) _ripples(canvas, o, 68, 138, 255, v.r);
         canvas.drawCircle(o, 7.5, Paint()..color = Colors.white);
         canvas.drawCircle(o, 5.5, Paint()..color = const Color(0xFF2979FF));
         if (meSel) _pill(canvas, o, 'Tú');
       }
     }
+  }
+
+  /// Fotografía de la Tierra dibujada por la GPU.
+  void _paintReal(Canvas canvas, _View v, Size size) {
+    final sh = GlobeAssets.shader!;
+    sh.setFloat(0, size.width);
+    sh.setFloat(1, size.height);
+    sh.setFloat(2, lon0 * pi / 180);
+    sh.setFloat(3, lat0 * pi / 180);
+    sh.setFloat(4, v.r);
+    sh.setImageSampler(0, GlobeAssets.tex!);
+    canvas.drawCircle(v.c, v.r, Paint()..shader = sh);
+    canvas.drawCircle(
+        v.c,
+        v.r,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2
+          ..color = const Color(0x5590CAF9));
+  }
+
+  /// Ondas que salen del punto, como una emisora transmitiendo.
+  void _ripples(Canvas canvas, Offset o, int r, int g, int b, double globeR) {
+    final reach = globeR * 0.5;
+    for (var k = 0; k < 3; k++) {
+      final ph = (pulse + k / 3) % 1.0;
+      canvas.drawCircle(
+          o,
+          8 + reach * ph,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3.5 * (1 - ph) + 0.8
+            ..color = Color.fromRGBO(r, g, b, (1 - ph) * 0.9));
+    }
+    canvas.drawCircle(o, 14, Paint()..color = Color.fromRGBO(r, g, b, 0.28));
+    canvas.drawCircle(o, 9, Paint()..color = Color.fromRGBO(r, g, b, 0.55));
+    canvas.drawCircle(o, 4, Paint()..color = Colors.white);
   }
 
   @override
@@ -421,12 +486,13 @@ class _GlobeScreenState extends State<GlobeScreen>
   (double, double)? me;
   bool meSel = false;
   late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(seconds: 1));
+      vsync: this, duration: const Duration(seconds: 2));
   bool _resumed = true;
   int _tick = 0;
 
   void _syncAnim() {
     final run = widget.active && _resumed && !Settings.saver.value;
+    if (run) GlobeAssets.load();
     if (run) {
       if (!_c.isAnimating) _c.repeat();
     } else {
@@ -444,10 +510,14 @@ class _GlobeScreenState extends State<GlobeScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     Settings.saver.addListener(_onSaver);
+    GlobeAssets.ready.addListener(_onSaver);
     _c.addListener(() {
-      if (!mounted || touching || sel != null || meSel) return;
+      if (!mounted || touching) return;
       if (++_tick % 2 != 0) return;
-      setState(() => lon0 += 0.5);
+      final rotating = sel == null && !meSel;
+      setState(() {
+        if (rotating) lon0 = (lon0 + 0.5) % 360;
+      });
     });
     _syncAnim();
   }
@@ -468,6 +538,7 @@ class _GlobeScreenState extends State<GlobeScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     Settings.saver.removeListener(_onSaver);
+    GlobeAssets.ready.removeListener(_onSaver);
     _c.dispose();
     super.dispose();
   }
@@ -554,7 +625,15 @@ class _GlobeScreenState extends State<GlobeScreen>
                   onPanEnd: (_) => touching = false,
                   onTapUp: (d) => _tap(d.localPosition, size),
                   child: CustomPaint(
-                      painter: _GlobePainter(lon0, lat0, sel, me, meSel, 0.35, Settings.saver.value),
+                      painter: _GlobePainter(
+                          lon0,
+                          lat0,
+                          sel,
+                          me,
+                          meSel,
+                          Settings.saver.value ? 0.35 : _c.value,
+                          Settings.saver.value,
+                          GlobeAssets.ready.value && !Settings.saver.value),
                       size: size),
                 ),
               ),
