@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'battery.dart';
 import 'player_service.dart';
 import 'settings.dart';
 
@@ -70,6 +71,48 @@ class SaverSheet extends StatelessWidget {
                       child: Text('•  $t',
                           style: const TextStyle(color: Colors.white70)),
                     )),
+                const SizedBox(height: 16),
+                const Divider(height: 28),
+                const Text('Reproducción con pantalla apagada',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 6),
+                FutureBuilder<bool>(
+                  future: batteryOk(),
+                  builder: (_, s) {
+                    final ok = s.data ?? true;
+                    return Row(children: [
+                      Expanded(
+                        child: Text(
+                            ok
+                                ? 'Batería: sin restricciones'
+                                : 'La batería puede cortar la radio',
+                            style: TextStyle(
+                                color: ok
+                                    ? const Color(0xFF69F0AE)
+                                    : Colors.amber)),
+                      ),
+                      if (!ok)
+                        FilledButton.tonal(
+                            onPressed: requestBattery,
+                            child: const Text('Permitir')),
+                    ]);
+                  },
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                    'En Xiaomi, Oppo, Vivo o Huawei activa también el "inicio automático" de Radio Mundo en los ajustes del teléfono.',
+                    style: TextStyle(color: Colors.white54, fontSize: 12)),
+                ValueListenableBuilder<String>(
+                  valueListenable: PlayerService.i.lastEvent,
+                  builder: (_, e, __) => e.isEmpty
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text('Último evento: $e',
+                              style: const TextStyle(
+                                  color: Colors.white54, fontSize: 12)),
+                        ),
+                ),
                 const SizedBox(height: 16),
                 ValueListenableBuilder<double>(
                   valueListenable: PlayerService.i.dataKb,

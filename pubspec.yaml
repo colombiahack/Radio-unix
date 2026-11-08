@@ -1,7 +1,7 @@
 name: radio_mundo
 description: Radio mundial sin anuncios ni rastreo.
 publish_to: none
-version: 0.13.1+14
+version: 0.14.1+16
 
 environment:
   sdk: ">=3.3.0 <4.0.0"

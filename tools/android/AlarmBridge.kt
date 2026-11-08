@@ -6,7 +6,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -129,11 +131,72 @@ object AlarmBridge {
                     result.success(null)
                 }
             }
+            "locks" -> {
+                val on = call.argument<Boolean>("on") ?: false
+                Locks.set(act.applicationContext, on)
+                result.success(true)
+            }
+            "batteryOk" -> {
+                val pm = act.getSystemService(Context.POWER_SERVICE) as PowerManager
+                result.success(Build.VERSION.SDK_INT < 23 || pm.isIgnoringBatteryOptimizations(act.packageName))
+            }
+            "requestBattery" -> {
+                try {
+                    val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    i.data = Uri.parse("package:" + act.packageName)
+                    act.startActivity(i)
+                } catch (e: Exception) {
+                    try {
+                        act.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                    } catch (e2: Exception) {
+                    }
+                }
+                result.success(true)
+            }
             "stop" -> {
                 act.stopService(Intent(act, AlarmService::class.java))
                 result.success(true)
             }
             else -> result.notImplemented()
+        }
+    }
+}
+
+object Locks {
+    private var wake: PowerManager.WakeLock? = null
+    private var wifi: WifiManager.WifiLock? = null
+
+    fun set(ctx: Context, on: Boolean) {
+        try {
+            if (on) {
+                if (wake == null) {
+                    val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
+                    val w = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "radiomundo:stream")
+                    w.setReferenceCounted(false)
+                    wake = w
+                }
+                if (wake?.isHeld != true) {
+                    wake?.acquire()
+                }
+                if (wifi == null) {
+                    val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                    val mode = if (Build.VERSION.SDK_INT >= 29) WifiManager.WIFI_MODE_FULL_LOW_LATENCY else WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                    val l = wm.createWifiLock(mode, "radiomundo:wifi")
+                    l.setReferenceCounted(false)
+                    wifi = l
+                }
+                if (wifi?.isHeld != true) {
+                    wifi?.acquire()
+                }
+            } else {
+                if (wake?.isHeld == true) {
+                    wake?.release()
+                }
+                if (wifi?.isHeld == true) {
+                    wifi?.release()
+                }
+            }
+        } catch (e: Exception) {
         }
     }
 }

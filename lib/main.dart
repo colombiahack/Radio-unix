@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'alarms.dart';
+import 'battery.dart';
 import 'player_service.dart';
 import 'screens.dart';
 import 'settings.dart';
@@ -13,6 +14,7 @@ Future<void> main() async {
     androidNotificationChannelId: 'com.radiomundo.audio',
     androidNotificationChannelName: 'Radio Mundo',
     androidNotificationOngoing: true,
+    androidStopForegroundOnPause: false,
   );
   await PlayerService.i.init();
   await Settings.init();
@@ -24,6 +26,7 @@ Future<void> main() async {
     Permission.notification.request();
     checkForUpdate();
     Alarms.checkRinging();
+    watchBattery();
   });
 }
 
